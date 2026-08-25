@@ -1,0 +1,98 @@
+# Formula provenance
+
+Every calculation in `src/calc/` traced back to the cell it came from, so the science can
+be checked against the original workbooks without reading the app.
+
+Sources:
+- **T** = `260821_hibit_transfection_optimisation_dilutions_template.xlsx`
+- **L** = `layout-aquous.xlsx` (the improved dilution/DMSO-matching version)
+
+## Module 1 — reverse transfection (`src/calc/transfection.ts`)
+
+| Quantity | Spreadsheet | Formula | Implemented in |
+| --- | --- | --- | --- |
+| Total DNA / condition (ng) | T `Setup!C23` | `C5*C4` = dna_ng × N | `perCondition` |
+| … × margin (ng) | T `Setup!C24` | `C5*C4*C8` | `perCondition` |
+| PEI / condition (µl) | T `Setup!C25` | `((C5*C4)*C7)/1000/I4` | `perCondition` |
+| OptiMEM for DNA (µl) | T `Setup!C26` | `(C6*C4)/2` | `perCondition` |
+| OptiMEM for PEI (µl) | T `Setup!C27` | `(C6*C4)/2` | `perCondition` |
+| DMEM / condition (µl) | T `Setup!C28` | `F5*C4` | `perCondition` |
+| Cells / condition (k) | T `Setup!C29` | `F4*C4` | `perCondition` |
+| Total PEI (µl) | T `PEI Mix!C6` | `C5*C4*Setup!C8` | `masterMix` |
+| Total OptiMEM for PEI (µl) | T `PEI Mix!C8` | `C7*C4*Setup!C8` | `masterMix` |
+| DMEM total (µl) | T `PEI Mix!F4` | `Setup!F5*Setup!C4*Setup!C8*C4` | `masterMix` |
+| Total cells (k) | T `PEI Mix!F5` | `Setup!F4*Setup!C4*Setup!C8*C4` | `masterMix` |
+| DNA row ng | T `DNA Mixes!E11` | `(Setup!C5*Setup!C4)*pct/100` | `computeCondition` |
+| DNA row µl | T `DNA Mixes!F11` | `ng / stockConc`, `—` if stock blank/0 | `computeCondition` |
+| OptiMEM in the DNA tube (`fixed`) | T `DNA Mixes!E20` | `Setup!C26` | `computeCondition` |
+| OptiMEM in the DNA tube (`final-volume`) | — (new) | `max(0, Setup!C26 − Σ DNA µl)` | `computeCondition` |
+| Filler % | T `DNA Mixes!D14` | `MAX(0, 100 − Σ other %)` | `fillerPct` |
+| Composition check | T `DNA Mixes!C20` | `IF(sum=100,"✓ OK","⚠ ≠ 100%")` | `computeCondition` |
+
+Reference values reproduced by the test suite (N=12, 100 ng/well, PEI:DNA 3, PEI 1 µg/µl,
+OptiMEM 10 µl/well, margin 1.2, 8 conditions): 1200 ng · 1440 ng · 3.6 µl · 60 µl · 60 µl ·
+1200 µl · 360 k cells; master mix 34.56 µl PEI, 576 µl OptiMEM, 11520 µl DMEM, 3456 k cells;
+block A2 → 6 ng / 0.6 µl HiBiT, filler 99.5 % → 1194 ng / 1.194 µl, totals 100 / 1200 / 1.794.
+
+### Where the app departs from the sheet's conventions
+
+- **Cells are counted in thousands (k), not millions.** The sheet's `Setup!F4` held
+  0.03 M/well; the app holds 30 k/well. All downstream cell numbers are in k, with the
+  millions equivalent shown as a hint. Project files saved before this change are
+  converted automatically (`migrate`, `src/state/project.ts`).
+- **Margin is defined explicitly.** It multiplies the *shared master mixes* only — PEI,
+  the OptiMEM that pairs with it, and the cell suspension (DMEM + cells). Per-condition
+  DNA volumes stay at 1×; "Total DNA × margin" is displayed for reference, exactly as the
+  sheet did, and is not used in any downstream volume.
+- **DNA stocks carry a lab ID** (`plasmidId`) alongside the name. It prints on the bench
+  sheet next to every DNA line.
+- **The OptiMEM volume per DNA tube has two modes** (`optimemMode`): `fixed` reproduces the
+  sheet — add `Setup!C26` µl regardless of the DNA volume, so the tube ends up slightly
+  bigger; `final-volume` treats `Setup!C26` as the tube's target total and adds
+  `Setup!C26 − Σ DNA µl` instead. Both report the resulting tube total. Files saved before
+  this option existed default to `fixed`.
+- **`half-area 96-well` is a plate format**, sharing the 8 × 12 footprint of a standard 96;
+  only the working volumes differ, which the user sets through the per-well fields.
+- **The grid is editable in both directions and may be ragged.** Columns and row groups can
+  be added or deleted individually; a block counts as a condition only when a % is typed
+  in it. `Use` fills a block with an explicit 0 % on every non-filler DNA — which makes the
+  filler top up to 100 %, i.e. the sheet's "no receptor" control — and `Clear` empties it.
+  So 2 receptor × 2 arrestin amounts plus one empty-vector control = a 2 × 3 grid with the
+  two unused blocks cleared, and the app counts 5 conditions.
+
+### Deliberate deviations from the sheet
+
+- `CEILING(x,1)` snaps values within 1e-9 of a whole number before rounding up
+  (`src/calc/units.ts`). Excel lets float noise turn a 200 µl tube into 201 µl; we do not.
+- Percentage totals are compared to 100 with a 1e-9 tolerance, so `0.1 + 0.2 + 99.7`
+  still reads ✓ OK.
+- Unknown stock concentration yields `null` → “—”, never a number.
+
+## Module 2 — plate layout
+
+Not built yet. Reference: T `Plate Layout`.
+
+## Module 3 — serial dilution + DMSO matching
+
+Not built yet. Reference: L `Compounds` (improved), T `Dilutions` (precursor).
+Key cells already decoded for implementation:
+
+| Quantity | Spreadsheet | Formula |
+| --- | --- | --- |
+| Conc (µM) | L `C18` | `(10^logM)*1e6` |
+| Vol to prepare | L `D18` | `IF(next empty, CEILING(V*m,1), CEILING(V*m + (D_next*conc_next)/conc_i, 1))` |
+| Aliquot, top row | L `E18` | `(D_top*conc_top*f)/S` |
+| Aliquot, lower rows | L `E19` | `(D_i*conc_i)/conc_{i−1}` |
+| DMSO buffer | L `G18` | `IF(target=0,0,MAX(0,MIN(D−E, D−(E*[vehicle=DMSO?1:0])/target)))` |
+| DMSO buffer, lower rows | L `G19` | same with the aliquot already at target → reduces to `D−E` |
+| Normal buffer | L `F18` | `(D−E) − DMSO_buffer` |
+| Working DMSO target | L `E4/E6` | `MAX over DMSO compounds of (top aliquot / vol to prepare)`, overridable |
+| In-well DMSO | L `E7` | `target / 2` (the 50 µl + 50 µl addition) |
+| Left for wells | L `H18` | `IF(next empty, D_i, D_i − E_{i+1})` |
+
+Reference values to reproduce: three compounds, top row −5 (10 µM), V = 200, f = 2, m = 1,
+S = 10000 µM → each draws 0.4 µl stock; target = 0.002 (0.2 % working, 0.1 % in-well);
+Iso (aqueous) → Normal 0 µl / DMSO buffer 199.6 µl; Nebi & Carve (DMSO) → Normal 199.6 µl /
+DMSO buffer 0 µl. Ang II block from T `Dilutions`: V = 200, f = 10, S = 100 µM, logM −6 →
+prepare 200 µl, 20 µl stock, 180 µl buffer, 200 µl left for wells; Losartan (−5, −6;
+S = 30000 µM) → top tube 220 µl, 0.7333 µl stock, 200 µl left for wells.

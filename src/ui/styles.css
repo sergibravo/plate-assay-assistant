@@ -1,0 +1,203 @@
+/* Visual convention carried over from the spreadsheets:
+   yellow = user input, blue = auto-calculated. Never mix the two.
+   Chrome around them is app-like, not page-like: full-width, dense, one dark bar on top. */
+:root {
+  --input-bg: #fff8c4;
+  --input-border: #e0c94a;
+  --calc-bg: #dbeafe;
+  --calc-border: #93b4e0;
+  --ink: #16181d;
+  --muted: #667085;
+  --line: #dde0e6;
+  --line-soft: #eceef2;
+  --warn: #a25a06;
+  --warn-bg: #fef3c7;
+  --error: #b42318;
+  --error-bg: #fee4e2;
+  --ok: #067647;
+  --panel: #ffffff;
+  --bg: #eceef2;
+  --chrome: #1f2937;
+  --chrome-ink: #e8eaee;
+  --accent: #2563eb;
+  --value-col: 104px;
+  --unit-col: 84px;
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  font: 13.5px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+button { font: inherit; }
+
+/* ---------- app chrome ---------- */
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: var(--chrome);
+  color: var(--chrome-ink);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  flex-wrap: wrap;
+}
+.app-header h1 { font-size: 14px; margin: 0; font-weight: 650; letter-spacing: .01em; }
+.app-header .spacer { flex: 1; }
+.app-header input[type="text"] {
+  font: inherit; padding: 4px 9px; border: 1px solid #3b4757; border-radius: 5px;
+  min-width: 240px; background: #2b3543; color: #fff;
+}
+.app-header input[type="text"]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.app-header .btn { background: #2b3543; border-color: #3b4757; color: var(--chrome-ink); }
+.app-header .btn:hover { background: #37424f; }
+.app-header .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.tabs {
+  display: flex; gap: 2px; padding: 0 12px;
+  background: #f7f8fa; border-bottom: 1px solid var(--line);
+  position: sticky; top: 41px; z-index: 19;
+}
+.tabs button {
+  border: none; background: none; padding: 8px 14px; cursor: pointer; color: var(--muted);
+  border-bottom: 2px solid transparent; font-weight: 550;
+}
+.tabs button.active { color: var(--ink); border-bottom-color: var(--accent); background: #fff; }
+.tabs button:disabled { opacity: .4; cursor: not-allowed; }
+
+main { padding: 14px 16px 40px; }
+
+/* ---------- panels ---------- */
+
+.panel {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 14px 16px 16px; margin-bottom: 14px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .04);
+}
+.panel > .panel-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0; flex: 1; }
+.panel h3 { font-size: 12.5px; margin: 0 0 8px; color: #344054; }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px 32px; align-items: start; }
+
+/* ---------- fields: three aligned columns everywhere ---------- */
+
+.field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--value-col) var(--unit-col);
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+.field label { color: #333; min-width: 0; }
+.field .unit { color: var(--muted); font-size: 11.5px; }
+.field input, .field select, .field output {
+  width: 100%; padding: 4px 7px; font: inherit; text-align: right;
+  border: 1px solid var(--input-border); background: var(--input-bg); border-radius: 4px;
+}
+.field select, .field input[type="text"] { text-align: left; }
+.field output.calc {
+  text-align: right; border: 1px solid var(--calc-border); background: var(--calc-bg);
+  font-variant-numeric: tabular-nums; display: block;
+}
+
+/* The volumes the user actually pipettes: bold, boxed, still on the same columns. */
+.pipette-box {
+  border: 1px solid var(--calc-border); background: #f2f7ff; border-radius: 6px;
+  padding: 8px 10px; margin: 0 -11px 8px;
+}
+.pipette-box .field:last-child { margin-bottom: 0; }
+.field.strong label { font-weight: 700; }
+.field.strong output.calc { font-weight: 700; font-size: 14.5px; }
+.sub { color: var(--muted); font-size: 10.5px; font-style: normal; }
+
+/* ---------- tables ---------- */
+
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { border: 1px solid var(--line-soft); padding: 4px 7px; text-align: left; }
+th { background: #f7f8fa; font-weight: 600; font-size: 11.5px; color: #475467; }
+td.num, th.num { text-align: right; }
+td.calc { background: var(--calc-bg); }
+td.input { background: var(--input-bg); padding: 0; }
+td.input input { width: 100%; border: none; background: transparent; padding: 4px 7px; font: inherit; text-align: right; }
+td.input input:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+tr.total td { font-weight: 600; background: #f4f6f9; }
+
+.legend { display: flex; gap: 16px; align-items: center; color: var(--muted); font-size: 11.5px; margin-top: 10px; }
+.swatch { display: inline-block; width: 11px; height: 11px; border-radius: 2px; vertical-align: -1px; margin-right: 5px; }
+.swatch.input { background: var(--input-bg); border: 1px solid var(--input-border); }
+.swatch.calc { background: var(--calc-bg); border: 1px solid var(--calc-border); }
+
+/* ---------- messages & buttons ---------- */
+
+.msg { padding: 7px 10px; border-radius: 5px; margin-bottom: 6px; font-size: 12.5px; }
+.msg.warn { background: var(--warn-bg); color: var(--warn); }
+.msg.error { background: var(--error-bg); color: var(--error); }
+.msg.info { background: #eff6ff; color: #1d4ed8; }
+.ok { color: var(--ok); font-weight: 600; }
+.bad { color: var(--error); font-weight: 600; }
+
+.btn {
+  padding: 4px 10px; border: 1px solid var(--line); background: #fff; border-radius: 5px; cursor: pointer;
+  color: inherit;
+}
+.btn:hover { background: #f3f4f6; }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { background: #1d4ed8; }
+.btn.small { padding: 1px 6px; font-size: 11.5px; }
+.btn.armed { background: var(--error-bg); border-color: var(--error); color: var(--error); font-weight: 600; }
+
+/* ---------- segmented control (OptiMEM mode) ---------- */
+
+.segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.segmented button { border: none; background: #fff; padding: 5px 12px; cursor: pointer; color: var(--muted); }
+.segmented button + button { border-left: 1px solid var(--line); }
+.segmented button.on { background: var(--accent); color: #fff; font-weight: 600; }
+
+/* ---------- condition grid ---------- */
+
+.grid-scroll { overflow-x: auto; padding-bottom: 8px; }
+.grid-inner { min-width: max-content; }
+.cond-grid { display: grid; gap: 12px; }
+.col-head { display: grid; gap: 12px; margin-bottom: 8px; align-items: center; }
+.col-head .col-cell { display: flex; gap: 4px; align-items: center; }
+.col-head .col-cell input {
+  flex: 1; min-width: 0; border: 1px solid var(--input-border); background: var(--input-bg);
+  border-radius: 4px; padding: 3px 7px; font: inherit;
+}
+.rowgroup-head { display: flex; gap: 6px; align-items: center; margin: 0 0 8px; }
+.rowgroup-head input {
+  border: 1px solid var(--input-border); background: var(--input-bg); border-radius: 4px;
+  padding: 3px 7px; font: inherit; width: 230px;
+}
+.rowgroup-head .tag { font-weight: 600; font-size: 11.5px; color: var(--muted); }
+
+.cond-card { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #fff; }
+.cond-card > header { background: #f7f8fa; padding: 5px 7px; display: flex; gap: 6px; align-items: center; border-bottom: 1px solid var(--line-soft); }
+.cond-card > header .code { font-weight: 700; font-size: 11.5px; color: var(--muted); }
+.cond-card > header input { flex: 1; min-width: 0; border: 1px solid var(--input-border); background: var(--input-bg); border-radius: 4px; padding: 2px 6px; font: inherit; }
+.cond-card.empty { opacity: .5; background: #fafbfc; }
+.cond-card table { border: none; }
+.cond-card th:first-child, .cond-card td:first-child { border-left: none; }
+.cond-card th:last-child, .cond-card td:last-child { border-right: none; }
+.cond-card tr:last-child td { border-bottom: none; }
+
+.hint { color: var(--muted); font-size: 11.5px; margin: 4px 0 0; }
+.stub { color: var(--muted); padding: 48px; text-align: center; }
+
+@media print {
+  .app-header, .tabs, .no-print { display: none !important; }
+  body { background: #fff; }
+  .panel { border: none; box-shadow: none; padding: 0; break-inside: avoid; }
+  main { padding: 0; }
+  .grid-scroll { overflow: visible; }
+}

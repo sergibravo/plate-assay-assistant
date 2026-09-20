@@ -89,7 +89,7 @@ describe('substrate inside the experiment', () => {
     dmsoOverride: null,
     addition: { compound_ul: 10, assayBuffer_ul: 80 },
     dmsoPlacement: 'compound-only',
-    premixOverrides: { normal: null, dmso: null, well: null, substrate: null },
+    premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
     substrate: defaultSubstrate('NanoBiT/BRET'),
     blocks: [block],
     bsa: { enabled: false, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' },
@@ -124,12 +124,51 @@ describe('substrate inside the experiment', () => {
       }),
     );
     const sub = r.recipes.find((x) => x.id === 'substrate')!;
-    expect(sub.dmso_ul).toBeCloseTo(sub.prepare_ul * r.target, 9);
-    expect(sub.bsaStock_ul).toBeCloseTo((sub.prepare_ul * 0.0001 * 100) / 5, 9);
+    // it starts from the ready-made buffer, which already carries both
+    expect(sub.fromReadyBuffer).toBe(true);
+    expect(sub.baseName).toMatch(/ready-made/);
+    // within the noise floor of target, the substrate stock having displaced ~1 %
+    expect(Math.abs(1 - sub.achievedDmso / r.target)).toBeLessThan(0.02);
+    expect(Math.abs(1 - sub.achievedBsa / 0.0001)).toBeLessThan(0.02);
     expect(sub.base_ul).toBeCloseTo(
       sub.prepare_ul - sub.dmso_ul - sub.bsaStock_ul - sub.components[0].volume_ul,
       9,
     );
+  });
+
+  it('the substrate stocks displace carrier, which is reported and left alone when tiny', () => {
+    const r = computeDilutions(
+      exp({
+        dmsoPlacement: 'all-buffers',
+        bsa: { enabled: true, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' },
+      }),
+    );
+    const sub = r.recipes.find((x) => x.id === 'substrate')!;
+    const componentFraction = sub.components[0].volume_ul / sub.prepare_ul;
+    // 1 % of the volume is substrate stock, so the carrier lands 1 % low — inside the noise
+    expect(sub.achievedBsa).toBeCloseTo(0.0001 * (1 - componentFraction), 9);
+    expect(sub.correctedFor).toEqual([]);
+    expect(sub.leftShortFor.map((x) => x.name).sort()).toEqual(['BSA', 'DMSO']);
+    expect(r.warnings.some((w) => w.code === 'carrier-left-short')).toBe(true);
+  });
+
+  it('a big enough displacement is topped up instead', () => {
+    // a substrate at 1:10 in the well takes a tenth of the solution, far past the noise floor
+    const heavy = {
+      ...defaultSubstrate('NanoBiT/BRET'),
+      components: [{ id: 'c', name: 'concentrated reagent', dilution: 10, notes: '' }],
+    };
+    const r = computeDilutions(
+      exp({
+        substrate: heavy,
+        dmsoPlacement: 'all-buffers',
+        bsa: { enabled: true, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' },
+      }),
+    );
+    const sub = r.recipes.find((x) => x.id === 'substrate')!;
+    expect(sub.correctedFor.length).toBeGreaterThan(0);
+    expect(sub.achievedDmso).toBeCloseTo(r.target, 6);
+    expect(r.warnings.some((w) => w.code === 'carrier-topped-up')).toBe(true);
   });
 
   it('carries no DMSO when the well buffer carries none', () => {
@@ -143,7 +182,7 @@ describe('substrate inside the experiment', () => {
   });
 
   it('the premix volume can be overridden like any other', () => {
-    const r = computeDilutions(exp({ premixOverrides: { normal: null, dmso: null, well: null, substrate: 2000 } }));
+    const r = computeDilutions(exp({ premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: 2000 } }));
     const sub = r.recipes.find((x) => x.id === 'substrate')!;
     expect(sub.prepare_ul).toBe(2000);
     expect(sub.components[0].volume_ul).toBeCloseTo(20, 9); // 2000 / 100

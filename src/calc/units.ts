@@ -39,3 +39,10 @@ export function uMToLogM(uM: number): number {
 
 /** Volumes below this are not reliably pipettable by hand. */
 export const MIN_PIPETTE_UL = 0.5;
+
+/**
+ * A relative deviation smaller than this is not worth correcting: it is well inside the
+ * error of the pipetting that a correction would itself introduce. Used for the carrier
+ * (BSA / DMSO) that stocks displace when a premix is made from ready-made assay buffer.
+ */
+export const NEGLIGIBLE_RELATIVE = 0.02;

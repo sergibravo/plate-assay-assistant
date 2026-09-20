@@ -20,7 +20,7 @@
 
 import { computeSubstrate, defaultSubstrate, type SubstrateResult, type SubstrateSettings } from './substrate';
 import type { Vehicle, Warning } from './types';
-import { ceilingTo1, logMToUM, MIN_PIPETTE_UL, round } from './units';
+import { ceilingTo1, logMToUM, MIN_PIPETTE_UL, NEGLIGIBLE_RELATIVE, round } from './units';
 
 /**
  * What the compounds are diluted into, and what else the assay needs prepared.
@@ -120,7 +120,7 @@ export interface BsaSettings {
   placement: Placement;
 }
 
-export type DiluentId = 'normal' | 'dmso' | 'well' | 'substrate';
+export type DiluentId = 'assay-buffer' | 'normal' | 'dmso' | 'well' | 'substrate';
 
 /** How to premix one diluent, from the bottom of the tube upwards. */
 export interface DiluentRecipe {
@@ -136,8 +136,18 @@ export interface DiluentRecipe {
   bsaStock_ul: number;
   /** Named ingredients other than DMSO and BSA, e.g. the substrate components. */
   components: { name: string; volume_ul: number }[];
-  /** The rest: plain assay buffer / furimazine solution. */
+  /** What this premix starts from — ready-made assay buffer, or the plain stuff. */
+  baseName: string;
   base_ul: number;
+  /** True when the base is the ready-made assay buffer rather than plain buffer. */
+  fromReadyBuffer: boolean;
+  /** What the solution actually ends up at, once the additions have displaced carrier. */
+  achievedBsa: number;
+  achievedDmso: number;
+  /** Carrier that was topped up because the shortfall was worth correcting. */
+  correctedFor: string[];
+  /** Carrier left slightly off target because correcting it is inside pipetting error. */
+  leftShortFor: { name: string; achieved: number; target: number }[];
   /**
    * Why `prepare_ul` is above `required_ul`: always rounding up (buffers are cheap), and
    * sometimes scaling further so a small additive clears the pipetting minimum.
@@ -463,39 +473,106 @@ export function roundUpPremix(v: number): number {
 /**
  * Volumes of each ingredient for one premixed diluent.
  *
- * Beyond rounding up, the prepared volume is raised further when it has to be: a 0.4 µl
- * BSA or DMSO addition is not pipettable, and the fix is to make more diluent rather than
- * to accept a volume nobody can measure.
+ * Premixes are made the way this lab works: from one batch of **ready-made assay buffer**
+ * that already carries the BSA (and the DMSO, when every buffer carries it), rather than
+ * rebuilt from plain buffer each time. That is fewer pipetting steps, at the cost of the
+ * stocks added afterwards displacing a little of that carrier — 12 µl of substrate stock in
+ * 1200 µl takes 0.0100 % BSA to 0.0099 %.
+ *
+ * Such a shortfall is corrected only when it is worth correcting: past
+ * `NEGLIGIBLE_RELATIVE`, and only if the top-up is big enough to pipette accurately.
+ * Otherwise the achieved figure is reported and left alone, because a 0.1 µl correction
+ * introduces more error than it removes.
+ *
+ * A premix that needs *less* carrier than the ready-made buffer holds — a DMSO-free diluent
+ * when every buffer carries DMSO — cannot come from it, and is built from plain buffer.
  */
-function recipe(
-  id: DiluentId,
-  name: string,
-  required: number,
-  dmsoFrac: number,
-  bsaFrac: number,
-  bsaStockPct: number,
-  override: number | null,
-  components: { name: string; volume_ul: number }[] = [],
-): DiluentRecipe {
-  const scaledUpFor: string[] = [];
+function recipe(args: {
+  id: DiluentId;
+  name: string;
+  required: number;
+  /** What this premix must end up at. */
+  needDmso: number;
+  needBsa: number;
+  /** What the ready-made assay buffer already carries. */
+  readyDmso: number;
+  readyBsa: number;
+  bsaStockPct: number;
+  override: number | null;
+  components?: { name: string; volume_ul: number }[];
+  /** The batch everything else is made from: always built from plain buffer. */
+  isReadyBuffer?: boolean;
+  diluentName: string;
+}): DiluentRecipe {
+  const {
+    id, name, required, needDmso, needBsa, readyDmso, readyBsa,
+    bsaStockPct, override, components = [], isReadyBuffer = false, diluentName,
+  } = args;
 
+  // Can this start from the ready-made buffer, or does it need less carrier than that holds?
+  const fromReadyBuffer =
+    !isReadyBuffer && readyDmso <= needDmso + 1e-12 && readyBsa <= needBsa + 1e-12;
+  const carriedDmso = fromReadyBuffer ? readyDmso : 0;
+  const carriedBsa = fromReadyBuffer ? readyBsa : 0;
+  const addedDmsoFrac = Math.max(0, needDmso - carriedDmso);
+  const addedBsaFrac = Math.max(0, needBsa - carriedBsa);
+
+  const scaledUpFor: string[] = [];
   let suggested = roundUpPremix(required);
   if (required > 0) {
-    // Smallest volume of diluent at which each additive clears the pipetting minimum.
-    const minForDmso = dmsoFrac > 0 ? MIN_PIPETTE_UL / dmsoFrac : 0;
-    const minForBsa = bsaFrac > 0 && bsaStockPct > 0 ? (MIN_PIPETTE_UL * bsaStockPct) / (100 * bsaFrac) : 0;
+    // Smallest volume at which each thing added clears the pipetting minimum.
+    const minForDmso = addedDmsoFrac > 0 ? MIN_PIPETTE_UL / addedDmsoFrac : 0;
+    const minForBsa = addedBsaFrac > 0 && bsaStockPct > 0 ? (MIN_PIPETTE_UL * bsaStockPct) / (100 * addedBsaFrac) : 0;
     if (minForDmso > suggested) scaledUpFor.push('DMSO');
     if (minForBsa > suggested) scaledUpFor.push('BSA');
     suggested = roundUpPremix(Math.max(suggested, minForDmso, minForBsa));
   }
 
-  // The user's number wins outright: they can see what it costs from the warnings.
   const overridden = override !== null && override > 0;
   const prepare = overridden ? override : suggested;
 
-  const dmso_ul = prepare * dmsoFrac;
-  const bsaStock_ul = bsaStockPct > 0 ? (prepare * bsaFrac * 100) / bsaStockPct : 0;
+  let dmso_ul = prepare * addedDmsoFrac;
+  let bsaStock_ul = bsaStockPct > 0 ? (prepare * addedBsaFrac * 100) / bsaStockPct : 0;
   const componentVolume = components.reduce((a, c) => a + c.volume_ul, 0);
+
+  const achieved = () => {
+    const base = Math.max(0, prepare - dmso_ul - bsaStock_ul - componentVolume);
+    return {
+      dmso: prepare > 0 ? (base * carriedDmso + dmso_ul) / prepare : 0,
+      bsa: prepare > 0 ? (base * carriedBsa + (bsaStock_ul * bsaStockPct) / 100) / prepare : 0,
+    };
+  };
+
+  const correctedFor: string[] = [];
+  const leftShortFor: { name: string; achieved: number; target: number }[] = [];
+
+  // One correction pass: what remains after it is second-order, far below the noise floor.
+  for (const carrier of ['DMSO', 'BSA'] as const) {
+    const target = carrier === 'DMSO' ? needDmso : needBsa;
+    if (target <= 0 || prepare <= 0) continue;
+    const got = carrier === 'DMSO' ? achieved().dmso : achieved().bsa;
+    const shortfall = target - got;
+    if (shortfall <= 1e-15) continue;
+    if (shortfall / target < NEGLIGIBLE_RELATIVE) {
+      leftShortFor.push({ name: carrier, achieved: got, target });
+      continue;
+    }
+    const topUp =
+      carrier === 'DMSO'
+        ? prepare * shortfall
+        : bsaStockPct > 0
+          ? (prepare * shortfall * 100) / bsaStockPct
+          : 0;
+    if (topUp >= MIN_PIPETTE_UL) {
+      if (carrier === 'DMSO') dmso_ul += topUp;
+      else bsaStock_ul += topUp;
+      correctedFor.push(carrier);
+    } else {
+      leftShortFor.push({ name: carrier, achieved: got, target });
+    }
+  }
+
+  const final = achieved();
   return {
     id,
     name,
@@ -506,7 +583,13 @@ function recipe(
     dmso_ul,
     bsaStock_ul,
     components,
+    baseName: fromReadyBuffer ? `ready-made ${diluentName}` : `plain ${diluentName}`,
     base_ul: Math.max(0, prepare - dmso_ul - bsaStock_ul - componentVolume),
+    fromReadyBuffer,
+    achievedBsa: final.bsa,
+    achievedDmso: final.dmso,
+    correctedFor,
+    leftShortFor,
     scaledUpFor: overridden ? [] : scaledUpFor,
   };
 }
@@ -602,46 +685,66 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
   const wellBsa = exp.bsa.placement === 'all-buffers' ? bsaFrac : 0;
   const wellDmso = exp.dmsoPlacement === 'all-buffers' ? target : 0;
 
-  const ov = exp.premixOverrides ?? { normal: null, dmso: null, well: null, substrate: null };
+  const ov = exp.premixOverrides ?? { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null };
   const substrateSettings = exp.substrate ?? defaultSubstrate(exp.assayType);
 
+  // What the one batch of ready-made assay buffer carries.
+  const readyBsa = wellBsa;
+  const readyDmso = wellDmso;
+  const common = { readyBsa, readyDmso, bsaStockPct, diluentName: assay.diluent };
+
   // Sized first, because the component stock volumes depend on the volume prepared.
-  const substrateSizing = recipe(
-    'substrate',
-    'Substrate solution',
-    substrateSettings.enabled
+  const substrateSizing = recipe({
+    ...common,
+    id: 'substrate',
+    name: 'Substrate solution',
+    required: substrateSettings.enabled
       ? computeSubstrate(substrateSettings, { assayBuffer_ul: exp.addition.assayBuffer_ul, compound_ul: exp.addition.compound_ul, prepare_ul: 0 }).required_ul
       : 0,
-    wellDmso,
-    wellBsa,
-    bsaStockPct,
-    ov.substrate ?? null,
-  );
+    needDmso: wellDmso,
+    needBsa: wellBsa,
+    override: ov.substrate ?? null,
+  });
   const substrate = computeSubstrate(substrateSettings, {
     assayBuffer_ul: exp.addition.assayBuffer_ul,
     compound_ul: exp.addition.compound_ul,
     prepare_ul: substrateSizing.prepare_ul,
   });
 
-  const recipes = [
-    recipe('normal', assay.normalBufferName, totalNormalBuffer_ul, 0, bsaFrac, bsaStockPct, ov.normal),
-    recipe('dmso', assay.dmsoBufferName, totalDmsoBuffer_ul, target, bsaFrac, bsaStockPct, ov.dmso),
-    recipe('well', 'Well buffer (added before compounds)', wellBufferVolume(exp), wellDmso, wellBsa, bsaStockPct, ov.well),
+  const downstream = [
+    recipe({ ...common, id: 'normal', name: assay.normalBufferName, required: totalNormalBuffer_ul, needDmso: 0, needBsa: bsaFrac, override: ov.normal }),
+    recipe({ ...common, id: 'dmso', name: assay.dmsoBufferName, required: totalDmsoBuffer_ul, needDmso: target, needBsa: bsaFrac, override: ov.dmso }),
+    recipe({ ...common, id: 'well', name: 'Well buffer (added before compounds)', required: wellBufferVolume(exp), needDmso: wellDmso, needBsa: wellBsa, override: ov.well }),
     ...(substrateSettings.enabled
       ? [
-          recipe(
-            'substrate',
-            `Substrate solution (in the same ${assay.diluent})`,
-            substrate.required_ul,
-            wellDmso,
-            wellBsa,
-            bsaStockPct,
-            ov.substrate ?? null,
-            substrate.components.map((c) => ({ name: `${c.name} (1:${round(c.preparedDilution, 2)})`, volume_ul: c.stock_ul })),
-          ),
+          recipe({
+            ...common,
+            id: 'substrate',
+            name: 'Substrate solution',
+            required: substrate.required_ul,
+            needDmso: wellDmso,
+            needBsa: wellBsa,
+            override: ov.substrate ?? null,
+            components: substrate.components.map((c) => ({ name: `${c.name} (1:${round(c.preparedDilution, 2)})`, volume_ul: c.stock_ul })),
+          }),
         ]
       : []),
   ];
+
+  // One batch of assay buffer feeds everything that starts from it.
+  const readyBufferNeeded = downstream.reduce((a, r) => a + (r.fromReadyBuffer ? r.base_ul : 0), 0);
+  const assayBufferRecipe = recipe({
+    ...common,
+    id: 'assay-buffer',
+    name: `Assay buffer batch (${assay.diluent})`,
+    required: readyBufferNeeded,
+    needDmso: readyDmso,
+    needBsa: readyBsa,
+    override: ov['assay-buffer'] ?? null,
+    isReadyBuffer: true,
+  });
+
+  const recipes = readyBufferNeeded > 0 ? [assayBufferRecipe, ...downstream] : downstream;
 
   for (const r of recipes) {
     if (r.scaledUpFor.length > 0) {
@@ -650,6 +753,22 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
         code: 'premix-scaled-up',
         scope: 'Premix',
         message: `${r.name}: scaled up from ${round(r.required_ul, 1)} µl to ${r.prepare_ul} µl so the ${r.scaledUpFor.join(' and ')} addition clears the ${MIN_PIPETTE_UL} µl pipetting minimum. Buffers are cheap; the leftover is deliberate. (A weaker ${r.scaledUpFor[0]} stock would need less.)`,
+      });
+    }
+    if (r.correctedFor.length > 0) {
+      warnings.push({
+        level: 'info',
+        code: 'carrier-topped-up',
+        scope: 'Premix',
+        message: `${r.name}: the stocks added displace enough ${r.correctedFor.join(' and ')}-carrying buffer to matter, so an extra ${r.correctedFor.map((c) => `${c}: ${(c === 'DMSO' ? r.dmso_ul : r.bsaStock_ul).toFixed(2)} µl total`).join(', ')} keeps it on target.`,
+      });
+    }
+    for (const short of r.leftShortFor) {
+      warnings.push({
+        level: 'info',
+        code: 'carrier-left-short',
+        scope: 'Premix',
+        message: `${r.name}: the stocks added leave ${short.name} at ${round(short.achieved * 100, 5)} % rather than ${round(short.target * 100, 5)} % — ${round((1 - short.achieved / short.target) * 100, 1)} % low, which is inside pipetting error, so it is left as is.`,
       });
     }
     if (!r.overridden) continue;

@@ -33,7 +33,7 @@ const experiment = (blocks: CompoundBlock[], over: Partial<DilutionExperiment> =
   dmsoOverride: null,
   addition: ADDITION_2X,
   dmsoPlacement: 'compound-only' as const,
-  premixOverrides: { normal: null, dmso: null, well: null, substrate: null },
+  premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
   substrate: { ...defaultSubstrate('NanoBiT/BRET'), enabled: false },
   blocks,
   bsa: NO_BSA,
@@ -281,13 +281,17 @@ describe('BSA in the diluents', () => {
     expect(r.blocks[0].rows[0].bsaFraction).toBe(0);
   });
 
-  it('0.01 % from a 5 % stock = 2 µl of stock per 1000 µl of diluent', () => {
+  it('0.01 % from a 5 % stock = 2 µl of stock per 1000 µl, added once to the batch', () => {
     // one aqueous compound, 5 rows → a diluent volume in the ~1 ml range
     const r = computeDilutions(experiment([block({ name: 'Iso', logM: [-5, -6, -7, -8, -9] })], { bsa }));
-    const normal = r.recipes[0];
-    expect(normal.bsaStock_ul).toBeCloseTo((normal.prepare_ul * 0.0001 * 100) / 5, 12);
-    expect(normal.bsaStock_ul / normal.prepare_ul).toBeCloseTo(0.002, 12); // 2 µl per ml
-    expect(normal.base_ul + normal.bsaStock_ul + normal.dmso_ul).toBeCloseTo(normal.prepare_ul, 9);
+    const batch = r.recipes.find((x) => x.id === 'assay-buffer')!;
+    expect(batch.bsaStock_ul / batch.prepare_ul).toBeCloseTo(0.002, 12); // 2 µl per ml
+    expect(batch.base_ul + batch.bsaStock_ul + batch.dmso_ul).toBeCloseTo(batch.prepare_ul, 9);
+    // the compound diluents take that ready-made buffer rather than re-adding BSA
+    const normal = r.recipes.find((x) => x.id === 'normal')!;
+    expect(normal.fromReadyBuffer).toBe(true);
+    expect(normal.bsaStock_ul).toBe(0);
+    expect(normal.achievedBsa).toBeCloseTo(0.0001, 12);
   });
 
   it('a stock without BSA leaves each tube a hair under target, and says by how much', () => {
@@ -329,13 +333,13 @@ describe('BSA in the diluents', () => {
         block({ id: 'nebi', name: 'Nebi', vehicle: 'DMSO', logM: [-5] }),
       ], { bsa }),
     );
-    const dmsoDiluent = r.recipes[1];
-    expect(dmsoDiluent.dmso_ul).toBeCloseTo(dmsoDiluent.prepare_ul * 0.002, 12);
-    expect(dmsoDiluent.bsaStock_ul).toBeCloseTo((dmsoDiluent.prepare_ul * 0.0001 * 100) / 5, 12);
-    expect(dmsoDiluent.base_ul).toBeCloseTo(
-      dmsoDiluent.prepare_ul - dmsoDiluent.dmso_ul - dmsoDiluent.bsaStock_ul,
-      9,
-    );
+    const dmsoDiluent = r.recipes.find((x) => x.id === 'dmso')!;
+    // DMSO is added on top of the ready-made (BSA-carrying) buffer
+    expect(dmsoDiluent.fromReadyBuffer).toBe(true);
+    expect(dmsoDiluent.dmso_ul).toBeGreaterThanOrEqual(dmsoDiluent.prepare_ul * 0.002);
+    expect(dmsoDiluent.achievedDmso).toBeCloseTo(0.002, 6);
+    expect(dmsoDiluent.achievedBsa).toBeCloseTo(0.0001, 5);
+    expect(dmsoDiluent.base_ul + dmsoDiluent.dmso_ul + dmsoDiluent.bsaStock_ul).toBeCloseTo(dmsoDiluent.prepare_ul, 9);
     // the DMSO numbers are untouched by adding BSA
     expect(r.target).toBeCloseTo(0.002, 12);
     expect(r.blocks[0].rows[0].dmsoBuffer_ul).toBeCloseTo(199.6, 12);
@@ -350,10 +354,10 @@ describe('BSA in the diluents', () => {
 
   it('makes more diluent rather than ask for an unpipettable BSA volume, and says so', () => {
     const r = computeDilutions(experiment([block({ name: 'Iso', volForWells_ul: 20, logM: [-5] })], { bsa }));
-    const normal = r.recipes[0];
-    expect(normal.scaledUpFor).toContain('BSA');
-    expect(normal.bsaStock_ul).toBeGreaterThanOrEqual(0.5);
-    expect(normal.prepare_ul).toBeGreaterThan(normal.required_ul);
+    const batch = r.recipes.find((x) => x.id === 'assay-buffer')!;
+    expect(batch.scaledUpFor).toContain('BSA');
+    expect(batch.bsaStock_ul).toBeGreaterThanOrEqual(0.5);
+    expect(batch.prepare_ul).toBeGreaterThan(batch.required_ul);
     const note = r.warnings.find((w) => w.code === 'premix-scaled-up');
     expect(note?.level).toBe('info');
     expect(note?.message).toMatch(/pipetting minimum/);
@@ -403,20 +407,19 @@ describe('preparing a different volume', () => {
 
   it('the suggestion stands until the user types over it', () => {
     const auto = computeDilutions(experiment(blocks, { bsa }));
-    const normal = auto.recipes[0];
+    const normal = auto.recipes.find((x) => x.id === 'normal')!;
     expect(normal.overridden).toBe(false);
     expect(normal.prepare_ul).toBe(normal.suggested_ul);
   });
 
   it('an override is used as-is, with the additives recalculated for it', () => {
     const r = computeDilutions(
-      experiment(blocks, { bsa, premixOverrides: { normal: null, dmso: 5000, well: null, substrate: null } }),
+      experiment(blocks, { bsa, premixOverrides: { 'assay-buffer': null, normal: null, dmso: 5000, well: null, substrate: null } }),
     );
-    const dmso = r.recipes[1];
+    const dmso = r.recipes.find((x) => x.id === 'dmso')!;
     expect(dmso.overridden).toBe(true);
     expect(dmso.prepare_ul).toBe(5000);
-    expect(dmso.dmso_ul).toBeCloseTo(5000 * r.target, 9);
-    expect(dmso.bsaStock_ul).toBeCloseTo((5000 * 0.0001 * 100) / 5, 9);
+    expect(dmso.achievedDmso).toBeCloseTo(r.target, 6);
     expect(dmso.base_ul + dmso.dmso_ul + dmso.bsaStock_ul).toBeCloseTo(5000, 9);
     // the suggestion is still reported, so the UI can offer it back
     expect(dmso.suggested_ul).toBeGreaterThan(0);
@@ -424,14 +427,14 @@ describe('preparing a different volume', () => {
 
   it('warns when the volume set is less than the compounds consume', () => {
     const r = computeDilutions(
-      experiment(blocks, { premixOverrides: { normal: null, dmso: 10, well: null, substrate: null } }),
+      experiment(blocks, { premixOverrides: { 'assay-buffer': null, normal: null, dmso: 10, well: null, substrate: null } }),
     );
     expect(r.warnings.some((w) => w.code === 'premix-override-short')).toBe(true);
   });
 
   it('warns when the volume set makes an additive unpipettable, and names the fix', () => {
     const r = computeDilutions(
-      experiment(blocks, { bsa, premixOverrides: { normal: 60, dmso: null, well: null, substrate: null } }),
+      experiment(blocks, { bsa, premixOverrides: { 'assay-buffer': 60, normal: null, dmso: null, well: null, substrate: null } }),
     );
     const w = r.warnings.find((x) => x.code === 'premix-override-unpipettable');
     expect(w?.message).toMatch(/BSA addition is only/);
@@ -442,17 +445,18 @@ describe('preparing a different volume', () => {
     const r = computeDilutions(
       experiment([block({ name: 'Iso', volForWells_ul: 20, logM: [-5] })], {
         bsa,
-        premixOverrides: { normal: 5000, dmso: null, well: null, substrate: null },
+        premixOverrides: { 'assay-buffer': 5000, normal: null, dmso: null, well: null, substrate: null },
       }),
     );
-    expect(r.recipes[0].prepare_ul).toBe(5000);
-    expect(r.recipes[0].scaledUpFor).toEqual([]);
-    expect(r.warnings.some((w) => w.code === 'premix-scaled-up' && w.message.includes(r.recipes[0].name))).toBe(false);
+    const batch = r.recipes.find((x) => x.id === 'assay-buffer')!;
+    expect(batch.prepare_ul).toBe(5000);
+    expect(batch.scaledUpFor).toEqual([]);
+    expect(r.warnings.some((w) => w.code === 'premix-scaled-up' && w.message.includes(batch.name))).toBe(false);
   });
 
   it('clearing the override (null) goes back to the suggestion', () => {
     const r = computeDilutions(
-      experiment(blocks, { bsa, premixOverrides: { normal: null, dmso: null, well: null, substrate: null } }),
+      experiment(blocks, { bsa, premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null } }),
     );
     expect(r.recipes.every((x) => !x.overridden)).toBe(true);
   });
@@ -466,7 +470,7 @@ describe('where the DMSO sits', () => {
       experiment([nebi], { addition: { compound_ul: 10, assayBuffer_ul: 90 }, dmsoPlacement: 'compound-only' }),
     );
     expect(r.inWellDmso).toBeCloseTo(r.target / 10, 12);
-    expect(r.recipes[2].dmso_ul).toBe(0);
+    expect(r.recipes.find((x) => x.id === 'well')!.dmso_ul).toBe(0);
   });
 
   it('every buffer: the well buffer carries the same DMSO, so nothing changes on addition', () => {
@@ -474,8 +478,10 @@ describe('where the DMSO sits', () => {
       experiment([nebi], { addition: { compound_ul: 10, assayBuffer_ul: 90 }, dmsoPlacement: 'all-buffers' }),
     );
     expect(r.inWellDmso).toBeCloseTo(r.target, 12);
-    const wellBuffer = r.recipes[2];
-    expect(wellBuffer.dmso_ul).toBeCloseTo(wellBuffer.prepare_ul * r.target, 9);
+    const wellBuffer = r.recipes.find((x) => x.id === 'well')!;
+    // it is simply the ready-made batch, which already carries the DMSO
+    expect(wellBuffer.fromReadyBuffer).toBe(true);
+    expect(wellBuffer.achievedDmso).toBeCloseTo(r.target, 9);
   });
 
   it('the well buffer is sized from the addition: 90 µl per 10 µl of compound', () => {
@@ -485,7 +491,7 @@ describe('where the DMSO sits', () => {
       }),
     );
     // two rows × 200 µl × margin 1 × (90/10)
-    expect(r.recipes[2].required_ul).toBeCloseTo(2 * 200 * 9, 9);
+    expect(r.recipes.find((x) => x.id === 'well')!.required_ul).toBeCloseTo(2 * 200 * 9, 9);
   });
 
   it('neither placement changes a tube volume', () => {

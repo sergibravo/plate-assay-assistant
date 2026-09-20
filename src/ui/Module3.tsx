@@ -7,7 +7,7 @@ import {
   type Placement,
 } from '../calc/dilutions';
 import type { Vehicle } from '../calc/types';
-import { fmtVol, logMToUM, round } from '../calc/units';
+import { fmtVol, logMToUM, NEGLIGIBLE_RELATIVE, round } from '../calc/units';
 import { exportDilutionsXlsx } from '../export/dilutionsheet';
 import { defaultSubstrate, newSubstrateComponent, type SubstrateReference } from '../calc/substrate';
 import { emptyDilutions, newCompoundBlock, type Project } from '../state/project';
@@ -384,10 +384,10 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
             <table>
               <thead>
                 <tr>
-                  <th>Diluent</th>
+                  <th>Prepare, in this order</th>
                   <th className="num">Needed (µl)</th>
                   <th className="num">Prepare (µl)</th>
-                  <th className="num">{result.assay.diluent} (µl)</th>
+                  <th className="num">Start from (µl)</th>
                   <th className="num">DMSO (µl)</th>
                   <th className="num">BSA {exp.bsa.enabled ? `${exp.bsa.stockPct} %` : ''} (µl)</th>
                   <th className="num">Other ingredients (µl)</th>
@@ -396,7 +396,10 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
               <tbody>
                 {result.recipes.map((r) => (
                   <tr key={r.id}>
-                    <td>{r.name}</td>
+                    <td>
+                      {r.name}
+                      <em className="sub" style={{ display: 'block' }}>from {r.baseName}</em>
+                    </td>
                     <td className="num">{fmtVol(r.required_ul, 1)}</td>
                     <td className="input">
                       <input
@@ -428,12 +431,21 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
               </tbody>
             </table>
             <p className="hint">
-              The suggestion is always rounded up — buffers are cheap and running short mid-prep
-              is not — and raised further when a small DMSO or BSA addition would otherwise be
-              unpipettable, which is called out at the top. <strong>Type over it</strong> to
-              prepare a different volume; the DMSO and BSA are recalculated for whatever you
-              enter, and clearing the cell returns to the suggestion.
+              Work down the table: make the assay buffer batch first, then take from it for each
+              of the others. The suggestion is always rounded up — buffers are cheap and running
+              short mid-prep is not — and raised further when a small DMSO or BSA addition would
+              otherwise be unpipettable. <strong>Type over it</strong> to prepare a different
+              volume; the additions are recalculated for whatever you enter, and clearing the
+              cell returns to the suggestion.
             </p>
+            {result.recipes.some((r) => r.leftShortFor.length > 0 || r.correctedFor.length > 0) && (
+              <p className="hint">
+                Stocks added to a ready-made buffer displace a little of its carrier. Where that
+                is under {round(NEGLIGIBLE_RELATIVE * 100, 0)} % it is reported and left alone —
+                a correction that small is less accurate than the error it removes; beyond that
+                the app tops it up. Either way the messages at the top say what happened.
+              </p>
+            )}
           </div>
         </div>
       </Panel>

@@ -148,6 +148,20 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
 - Assay defaults are **offered, never imposed**: a button loads the usual recipe for the
   selected assay instead of overwriting whatever is there when the assay type changes.
 
+## Premixes from ready-made buffer (2026-09-20)
+
+- **Everything is made from one batch of assay buffer.** Asked directly, Sergi confirmed the
+  lab keeps a batch already containing the BSA and makes each premix from it, rather than
+  rebuilding from plain buffer every time. The bench sheet now prints that order: batch
+  first, then each diluent taken from it. Fewer pipetting steps, which is what matters.
+- **Carrier displacement is reported, and corrected only when correcting helps.** Stocks
+  added to that buffer dilute its BSA and DMSO slightly. Under 2 % relative the app states
+  the achieved figure and leaves it alone — at that size the corrective pipetting introduces
+  more error than it removes, and Sergi's instruction was to optimise for pipetting ease, not
+  the last decimal. Past 2 % it tops up, provided the top-up itself is pipettable.
+- A premix that needs *less* carrier than the batch holds cannot come from it, and falls back
+  to plain buffer. Each row says which base it starts from, so the sheet is never ambiguous.
+
 ## Open / deferred
 
 - Deeper UI polish (keyboard navigation, sidebar, density) waits until modules 2 and 3 exist,

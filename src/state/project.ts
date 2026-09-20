@@ -173,7 +173,7 @@ export function emptyDilutions(): DilutionExperiment {
     dmsoOverride: null,
     addition: { compound_ul: 10, assayBuffer_ul: 80 },
     dmsoPlacement: 'compound-only',
-    premixOverrides: { normal: null, dmso: null, well: null, substrate: null },
+    premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
     substrate: defaultSubstrate('NanoBiT/BRET'),
     blocks: [newCompoundBlock('Compound 1')],
     bsa: { enabled: false, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' },

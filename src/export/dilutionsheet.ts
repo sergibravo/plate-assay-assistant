@@ -108,15 +108,15 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
     [],
     section(`PREMIX THE DILUENTS — ${result.assay.diluent.toUpperCase()}`),
     [
-      { v: 'Diluent', s: { font: { bold: true } } },
+      { v: 'Prepare, in this order', s: { font: { bold: true } } },
       { v: 'Prepare (µl)', s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
-      { v: `${result.assay.diluent} (µl)`, s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
+      { v: 'Start from (µl)', s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
       { v: 'DMSO (µl)', s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
       { v: exp.bsa.enabled ? `BSA ${exp.bsa.stockPct} % (µl)` : 'BSA (µl)', s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
       { v: 'Other ingredients (µl)', s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
     ],
     ...result.recipes.map((r): Row => [
-      { v: `${r.name}${r.overridden ? ' (volume you set)' : ''}`, s: pipetteLabel() },
+      { v: `${r.name}${r.overridden ? ' (volume you set)' : ''} — from ${r.baseName}`, s: pipetteLabel() },
       { v: r.prepare_ul, s: pipette() },
       { v: round(r.base_ul, 2), s: pipette() },
       { v: r.dmso_ul > 0 ? round(r.dmso_ul, 3) : '—', s: pipette() },
@@ -124,7 +124,17 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
       { v: r.components.length > 0 ? r.components.map((c) => `${c.name}: ${round(c.volume_ul, 3)}`).join(' · ') : '—', s: pipette() },
     ]),
     [{ v: result.target > 0 ? `The DMSO diluent is ${result.assay.diluent} premixed at ${pct(result.target)} DMSO; the other carries none.` : 'No DMSO stocks: plain diluent throughout.', s: muted() }],
-    [{ v: `Volumes are rounded up from what the compounds consume (${result.recipes.map((r) => `${r.name}: ${round(r.required_ul, 1)} µl`).join(' · ')}).`, s: muted() }],
+    [{ v: 'Make the assay buffer batch first, then take from it for each of the others.', s: muted() }],
+    ...result.recipes
+      .filter((r) => r.leftShortFor.length > 0 || r.correctedFor.length > 0)
+      .map((r): Row => [
+        {
+          v: r.correctedFor.length > 0
+            ? `${r.name}: topped up with extra ${r.correctedFor.join(' and ')} to stay on target after the stocks displaced some buffer.`
+            : `${r.name}: the stocks leave ${r.leftShortFor.map((x) => `${x.name} at ${round(x.achieved * 100, 5)} % (target ${round(x.target * 100, 5)} %)`).join(', ')} — inside pipetting error, left as is.`,
+          s: muted(),
+        },
+      ]),
   ];
 
   for (const note of result.assay.pending) rows.push([{ v: `Note: ${note}`, s: muted() }]);

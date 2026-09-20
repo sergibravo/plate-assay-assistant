@@ -119,6 +119,26 @@ Both DMSO and BSA carry a placement, and it decides only what the *well* ends at
 Tube volumes are identical either way (asserted by a test); the only difference is the well
 buffer's own recipe and the reported in-well figure.
 
+### Premixes come from one batch of assay buffer
+
+This lab keeps one batch of ready-made assay buffer — already carrying the BSA, and the DMSO
+when every buffer carries it — and makes everything else from it. The app prints the premixes
+in that order: the batch first, then each diluent taken from it plus whatever it still needs.
+
+A premix needing *less* carrier than the batch holds (a DMSO-free compound diluent when every
+buffer carries DMSO) cannot come from the batch and is built from plain buffer instead; the
+recipe says which base each row starts from.
+
+**Carrier displacement.** Stocks added afterwards displace buffer, so they dilute its carrier:
+12 µl of substrate stock in 1200 µl takes 0.0100 % BSA to 0.0099 %. The rule is
+`achieved = (base × carried + added) / prepared`, and what happens next depends on size:
+
+| Shortfall | What the app does |
+| --- | --- |
+| under `NEGLIGIBLE_RELATIVE` (2 %) | reports the achieved figure and leaves it — a correction that small is less accurate than the error it removes |
+| over 2 %, top-up ≥ 0.5 µl | adds the top-up, so the premix lands on target, and says so |
+| over 2 %, top-up < 0.5 µl | reports it and leaves it, because the correction is not pipettable |
+
 ### Premix volumes
 
 `roundUpPremix` rounds a premix up to a volume someone would measure out (next 10 µl below

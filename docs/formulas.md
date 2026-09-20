@@ -97,15 +97,36 @@ logM −6 → prepare 200 µl, 20 µl stock, 180 µl buffer, 200 µl left for we
 (−5, −6; S = 30000 µM) → top tube 220 µl, 0.7333 µl stock, 200 µl left for wells;
 Ang(1-7) at logM −4.52 → 30.19951720402018 µM, 60.39903440804036 µl of a 1000 µM stock.
 
-### What the dilution factor means
+### The addition is the one factor
 
-`f` is the dilution the tube undergoes **when it is added to the well**. The logM the user
-types is therefore the *final in-well* concentration, and each tube is prepared at `f ×`
-that — which is why the top aliquot carries the extra `× f` (`E_top = D_top·conc_top·f/S`)
-while the ratios between tubes, and so the rest of the chain, are unaffected. The same
-factor governs the in-well DMSO (`target / inWellFactor`); the app keeps it as a separate
-setting, defaulting to 2 for the usual 50 µl + 50 µl addition, and flags any block whose own
-`f` disagrees with it.
+`f` is the dilution the tube undergoes **when it is added to the well**, entered as the two
+volumes actually pipetted: `f = (compound_ul + inWell_ul) / compound_ul`, so 10 µl into 90 µl
+is 10×. The logM the user types is therefore the *final in-well* concentration, and each tube
+is prepared at `f ×` that — which is why the top aliquot carries the extra `× f`
+(`E_top = D_top·conc_top·f/S`) while the ratios between tubes are unaffected. The same factor
+governs the in-well DMSO. A block may override it for a compound added differently, which is
+flagged because that compound's well will not match the others.
+
+### Where an additive sits (`Placement`)
+
+Both DMSO and BSA carry a placement, and it decides only what the *well* ends at:
+
+| Placement | Well buffer | In-well concentration |
+| --- | --- | --- |
+| `compound-only` | carries none | `buffer fraction / f` — the cells meet it when the compound arrives |
+| `all-buffers` | premixed to the same fraction | `buffer fraction` — constant from the start, `f ×` higher |
+
+Tube volumes are identical either way (asserted by a test); the only difference is the well
+buffer's own recipe and the reported in-well figure.
+
+### Premix volumes
+
+`roundUpPremix` rounds a premix up to a volume someone would measure out (next 10 µl below
+100, then 50, 100, 500) — buffers are cheap, running short mid-prep is not. The prepared
+volume is raised further when a DMSO or BSA addition would otherwise fall under the 0.5 µl
+pipetting minimum: `V ≥ MIN/dmsoFraction` and `V ≥ MIN·stock% / (100·bsaFraction)`. Each
+recipe reports `scaledUpFor`, and the app says which additive forced it and what the
+required volume had been.
 
 ### Assay types
 

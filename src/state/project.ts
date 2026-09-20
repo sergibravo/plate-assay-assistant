@@ -4,7 +4,7 @@
  * localStorage autosave for convenience. No server, no database.
  */
 
-import type { CompoundBlock, DilutionExperiment } from '../calc/dilutions';
+import { additionFactor, type CompoundBlock, type DilutionExperiment } from '../calc/dilutions';
 import type {
   Compound,
   DnaMixGrid,
@@ -155,7 +155,7 @@ export function newCompoundBlock(name = '', rows = 8): CompoundBlock {
     id: uid('cmp'),
     name,
     volForWells_ul: 200,
-    dilutionFactor: 2,
+    dilutionFactorOverride: null,
     stockConc_uM: 10000,
     vehicle: 'aqueous',
     margin: 1,
@@ -170,9 +170,10 @@ export function emptyDilutions(): DilutionExperiment {
   return {
     assayType: 'NanoBiT/BRET',
     dmsoOverride: null,
-    inWellFactor: 2,
+    addition: { compound_ul: 10, inWell_ul: 90 },
+    dmsoPlacement: 'compound-only',
     blocks: [newCompoundBlock('Compound 1')],
-    bsa: { enabled: false, targetPct: 0.01, stockPct: 5, basis: 'buffer' },
+    bsa: { enabled: false, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' },
     bufferNotes: '',
   };
 }
@@ -244,9 +245,34 @@ export function migrate(raw: any): Project {
   p.dnaStocks = (p.dnaStocks ?? []).map((s: any) => ({ plasmidId: '', notes: '', ...s }));
   // Fields added after a project was saved fall back to the previous behaviour.
   p.transfection = { optimemMode: 'fixed', ...p.transfection };
-  p.dilutions = { ...emptyDilutions(), ...(p.dilutions ?? {}) };
+  // Note what the stored file actually had before defaults paper over it.
+  const storedDilutions = p.dilutions ?? {};
+  const hadAddition = storedDilutions.addition !== undefined;
+  p.dilutions = { ...emptyDilutions(), ...storedDilutions };
   p.dilutions.bsa = { ...emptyDilutions().bsa, ...(p.dilutions.bsa ?? {}) };
-  p.dilutions.blocks = (p.dilutions.blocks ?? []).map((b: any) => ({ ...newCompoundBlock(), ...b }));
+  // The addition used to be split between a global in-well factor and a per-block dilution
+  // factor; it is now one setting, expressed as the volumes actually pipetted.
+  if (p.dilutions.inWellFactor !== undefined && !hadAddition) {
+    const f = Number(p.dilutions.inWellFactor) || 2;
+    p.dilutions.addition = { compound_ul: 10, inWell_ul: 10 * (f - 1) };
+    delete p.dilutions.inWellFactor;
+  }
+  if (p.dilutions.bsa.basis !== undefined) {
+    // 'in-well' meant the buffer was premixed that much stronger; carry the number over.
+    if (p.dilutions.bsa.basis === 'in-well') {
+      p.dilutions.bsa.targetPct *= additionFactor(p.dilutions.addition);
+    }
+    p.dilutions.bsa.placement = 'compound-only';
+    delete p.dilutions.bsa.basis;
+  }
+  p.dilutions.blocks = (p.dilutions.blocks ?? []).map((b: any) => {
+    const block = { ...newCompoundBlock(), ...b };
+    if (b.dilutionFactor !== undefined && b.dilutionFactorOverride === undefined) {
+      block.dilutionFactorOverride = null; // the experiment's addition now governs
+      delete (block as any).dilutionFactor;
+    }
+    return block;
+  });
   p.compounds = p.compounds ?? [];
   p.notes = p.notes ?? '';
   return p as Project;

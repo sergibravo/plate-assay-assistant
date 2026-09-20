@@ -102,6 +102,26 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
 - **The diluents now come with a premix recipe** — base buffer + DMSO + BSA stock for each —
   because "premix 2984 µl of DMSO buffer" is not actionable on its own.
 
+## Module 3 corrections, round 2 (2026-09-20)
+
+- **One addition, entered as volumes.** There used to be a per-block dilution factor *and* a
+  global "in-well dilution on addition"; nobody could say which was which. Now the experiment
+  states the addition the way it is pipetted — "10 µl into 90 µl" — and shows the resulting
+  ×. That single factor prepares the tubes and sets the in-well DMSO. A block can still
+  override it, and is flagged when it does, because that compound's well then differs from
+  the rest.
+- **Two DMSO strategies, because both are used.** `compound-only`: the well buffer is
+  DMSO-free and all the DMSO arrives with the compound, matched so every compound spikes
+  identically. `all-buffers`: the well buffer is premixed at the same DMSO as the tubes, so
+  the concentration never changes — steadier for the cells, at a final DMSO `f ×` higher.
+  BSA carries the same choice, defaulting to `all-buffers`, which is how this lab prepares it.
+- **Premixes always round up.** Buffers are cheap; running out mid-preparation is not. Volumes
+  go up to the next 10/50/100/500 µl, and the exact requirement is printed beside it.
+- **An unpipettable additive raises the batch instead of raising a warning.** A 0.4 µl BSA
+  addition used to produce a warning and leave the user to solve it; now the premix is scaled
+  until the addition clears 0.5 µl, and the app says which additive forced it, what the
+  volume had been, and that a weaker stock would need less.
+
 ## Open / deferred
 
 - Deeper UI polish (keyboard navigation, sidebar, density) waits until modules 2 and 3 exist,

@@ -4,6 +4,7 @@ import {
   computeDilutions,
   type AssayType,
   type CompoundBlock,
+  type Placement,
 } from '../calc/dilutions';
 import type { Vehicle } from '../calc/types';
 import { fmtVol, logMToUM, round } from '../calc/units';
@@ -77,6 +78,52 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
         ))}
       </Panel>
 
+      <Panel title="Adding compound to the well">
+        <div className="grid-2">
+          <div>
+            <NumField
+              label="Compound solution added"
+              unit="µl per well"
+              value={exp.addition.compound_ul}
+              onChange={(v) => setExp({ addition: { ...exp.addition, compound_ul: v } })}
+            />
+            <NumField
+              label="Already in the well"
+              unit="µl per well"
+              value={exp.addition.inWell_ul}
+              onChange={(v) => setExp({ addition: { ...exp.addition, inWell_ul: v } })}
+            />
+            <CalcField label="= dilution on addition" unit="×" value={result.additionFactor} decimals={3} strong />
+            <p className="hint">
+              This one addition drives everything: each tube is prepared at{' '}
+              {round(result.additionFactor, 3)}× the concentration you type, so the logM in the
+              tables below is what the <strong>cells</strong> finally see.
+            </p>
+          </div>
+          <div>
+            <h3>Where the DMSO sits</h3>
+            <Segmented
+              value={exp.dmsoPlacement}
+              options={[
+                { value: 'compound-only' as Placement, label: 'Only in the compound' },
+                { value: 'all-buffers' as Placement, label: 'In every buffer' },
+              ]}
+              onChange={(v) => setExp({ dmsoPlacement: v })}
+            />
+            <p className="hint" style={{ marginTop: 8 }}>
+              <strong>Only in the compound:</strong> the {exp.addition.inWell_ul} µl already in the
+              well is DMSO-free, and all the DMSO arrives with the {exp.addition.compound_ul} µl
+              addition — matched across compounds, so they all spike identically.
+              <br />
+              <strong>In every buffer:</strong> the well buffer is premixed at the same DMSO as the
+              tubes, so the concentration never changes — steadier for the cells, but the final
+              DMSO is {round(result.additionFactor, 3)}× higher.
+            </p>
+          </div>
+        </div>
+        <Legend />
+      </Panel>
+
       <Panel title="DMSO vehicle matching">
         <div className="grid-2">
           <div>
@@ -104,14 +151,12 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
               <span className="unit">% DMSO</span>
             </div>
             <CalcField label="Used — DMSO in every tube" unit="% DMSO" value={result.target * 100} decimals={4} strong />
-            <NumField
-              label="In-well dilution on addition"
-              unit="×"
-              value={exp.inWellFactor}
-              step={0.5}
-              onChange={(v) => setExp({ inWellFactor: v })}
-            />
             <CalcField label="→ DMSO in the well" unit="% DMSO" value={result.inWellDmso * 100} decimals={4} strong />
+            <p className="hint">
+              {exp.dmsoPlacement === 'all-buffers'
+                ? 'Every buffer carries the same DMSO, so the well is at that % from the start and nothing changes when the compound goes in.'
+                : `Only the compound tubes carry DMSO, so the well lands ${round(result.additionFactor, 3)}× lower — the cells meet DMSO for the first time when the compound is added.`}
+            </p>
           </div>
           <div>
             <h3>Premix for the whole experiment</h3>
@@ -145,7 +190,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
         <Legend />
       </Panel>
 
-      <Panel title="BSA carrier">
+      <Panel title="BSA carrier & premix recipe">
         <div className="grid-2">
           <div>
             <div className="field">
@@ -168,15 +213,15 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                   onChange={(v) => setExp({ bsa: { ...exp.bsa, targetPct: v } })}
                 />
                 <div className="field">
-                  <label>…measured in</label>
+                  <label>…in</label>
                   <div style={{ gridColumn: '2 / span 2' }}>
                     <Segmented
-                      value={exp.bsa.basis}
+                      value={exp.bsa.placement}
                       options={[
-                        { value: 'buffer' as const, label: 'the prepared buffer' },
-                        { value: 'in-well' as const, label: 'the final well' },
+                        { value: 'all-buffers' as Placement, label: 'every buffer' },
+                        { value: 'compound-only' as Placement, label: 'only the compound' },
                       ]}
-                      onChange={(v) => setExp({ bsa: { ...exp.bsa, basis: v } })}
+                      onChange={(v) => setExp({ bsa: { ...exp.bsa, placement: v } })}
                     />
                   </div>
                 </div>
@@ -190,7 +235,9 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                 <CalcField label="Diluents premixed at" unit="% BSA" value={result.bsaBufferFraction * 100} decimals={4} strong />
                 <CalcField label="→ BSA in the well" unit="% BSA" value={result.bsaInWell * 100} decimals={4} />
                 <p className="hint">
-                  Both diluents carry the same BSA, so it stays constant across every compound.
+                  {exp.bsa.placement === 'all-buffers'
+                    ? 'Every buffer — the compound diluents and the buffer already in the well — is prepared at this %, so the well sits at it too.'
+                    : `Only the compound diluents carry BSA, so the well lands ${round(result.additionFactor, 3)}× lower.`}{' '}
                   A compound whose stock already contains BSA can declare it in its own block; a
                   stock without BSA leaves its top tube a hair under target, which is reported.
                 </p>
@@ -203,6 +250,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
               <thead>
                 <tr>
                   <th>Diluent</th>
+                  <th className="num">Needed (µl)</th>
                   <th className="num">Prepare (µl)</th>
                   <th className="num">{result.assay.diluent} (µl)</th>
                   <th className="num">DMSO (µl)</th>
@@ -213,6 +261,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                 {result.recipes.map((r) => (
                   <tr key={r.name}>
                     <td>{r.name}</td>
+                    <td className="num">{fmtVol(r.required_ul, 1)}</td>
                     <td className="calc num">{r.prepare_ul}</td>
                     <td className="calc num">{fmtVol(r.base_ul, 2)}</td>
                     <td className="calc num">{r.dmso_ul > 0 ? fmtVol(r.dmso_ul, 3) : '—'}</td>
@@ -222,8 +271,9 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
               </tbody>
             </table>
             <p className="hint">
-              Volumes are what the compound blocks consume, rounded up to whole µl. Slack comes
-              from each compound's own margin.
+              Always rounded up — buffers are cheap and running short mid-prep is not. A premix is
+              raised further when a small DMSO or BSA addition would otherwise be unpipettable;
+              that is called out in the messages at the top.
             </p>
           </div>
         </div>
@@ -266,7 +316,17 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                   />
                 </div>
                 <NumField label="Vol for wells" unit="µl" value={block.volForWells_ul} onChange={(v) => setBlock(block.id, { volForWells_ul: v })} />
-                <NumField label="Dilution factor on addition" unit="×" value={block.dilutionFactor} step={0.5} onChange={(v) => setBlock(block.id, { dilutionFactor: v })} />
+                <div className="field">
+                  <label>Added differently (optional)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    placeholder={`${round(result.additionFactor, 3)}×`}
+                    value={block.dilutionFactorOverride ?? ''}
+                    onChange={(e) => setBlock(block.id, { dilutionFactorOverride: e.target.value === '' ? null : Number(e.target.value) })}
+                  />
+                  <span className="unit">× dilution</span>
+                </div>
                 <NumField label="Stock concentration" unit="µM" value={block.stockConc_uM} onChange={(v) => setBlock(block.id, { stockConc_uM: v })} />
                 <div className="field">
                   <label>Stock vehicle</label>

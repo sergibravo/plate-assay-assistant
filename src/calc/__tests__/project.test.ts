@@ -59,6 +59,33 @@ describe('enable / clear a condition', () => {
 });
 
 describe('project migration', () => {
+  it('turns an old in-well factor into the addition it stood for', () => {
+    const old = {
+      version: 3,
+      name: 'mid-flight', createdAt: '', updatedAt: '', notes: '',
+      transfection: { cells_k_per_well: 30, optimemMode: 'fixed' },
+      dnaStocks: [], compounds: [],
+      grid: { cols: 1, rowGroups: 1, colLabels: [''], rowGroupLabels: [''], conditions: [[]] },
+      dilutions: {
+        assayType: 'NanoBiT/BRET',
+        dmsoOverride: null,
+        inWellFactor: 2,
+        blocks: [{ id: 'b', name: 'Iso', volForWells_ul: 200, dilutionFactor: 2, stockConc_uM: 10000, vehicle: 'aqueous', margin: 1, excludeFromVehicleMatch: false, logM: [-5], notes: '' }],
+        bsa: { enabled: true, targetPct: 0.02, stockPct: 5, basis: 'in-well' },
+        bufferNotes: '',
+      },
+    };
+    const m = migrate(old) as any;
+    // 2× used to mean equal volumes: 10 µl into 10 µl.
+    expect(m.dilutions.addition).toEqual({ compound_ul: 10, inWell_ul: 10 });
+    expect(m.dilutions.inWellFactor).toBeUndefined();
+    // an 'in-well' BSA basis meant the buffer was premixed that much stronger
+    expect(m.dilutions.bsa.targetPct).toBeCloseTo(0.04, 12);
+    expect(m.dilutions.bsa.placement).toBe('compound-only');
+    expect(m.dilutions.bsa.basis).toBeUndefined();
+    expect(m.dilutions.blocks[0].dilutionFactorOverride).toBeNull();
+  });
+
   it('gives a v2 project an empty dilutions section', () => {
     const v2 = {
       version: 2,
@@ -70,7 +97,8 @@ describe('project migration', () => {
     const m = migrate(v2);
     expect(m.version).toBe(PROJECT_VERSION);
     expect(m.dilutions.assayType).toBe('NanoBiT/BRET');
-    expect(m.dilutions.inWellFactor).toBe(2);
+    expect(m.dilutions.addition.compound_ul).toBeGreaterThan(0);
+    expect(m.dilutions.dmsoPlacement).toBe('compound-only');
     expect(m.dilutions.blocks.length).toBeGreaterThan(0);
   });
 

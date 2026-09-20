@@ -19,7 +19,7 @@
  */
 
 import type { Vehicle, Warning } from './types';
-import { ceilingTo1, logMToUM, MIN_PIPETTE_UL } from './units';
+import { ceilingTo1, logMToUM, MIN_PIPETTE_UL, round } from './units';
 
 /**
  * What the compounds are diluted into, and what else the assay needs prepared.
@@ -70,22 +70,43 @@ export const ASSAY_PROFILES: Record<AssayType, AssayProfile> = {
 };
 
 /**
+ * How the compound solution reaches the well: `compound_ul` of tube contents into
+ * `inWell_ul` already sitting there. 10 µl into 90 µl is a 10× dilution.
+ *
+ * This single addition drives everything: each tube is prepared at `factor ×` the final
+ * in-well concentration, and — unless the well buffer carries DMSO itself — the DMSO the
+ * cells see is the tube's divided by the same factor.
+ */
+export interface AdditionSettings {
+  compound_ul: number;
+  inWell_ul: number;
+}
+
+export function additionFactor(a: AdditionSettings): number {
+  return a.compound_ul > 0 ? (a.compound_ul + a.inWell_ul) / a.compound_ul : 1;
+}
+
+/**
+ * Where an additive lives.
+ * - `compound-only` — only the compound tubes carry it, so the well is diluted `factor ×`
+ *   below the tube. The cells meet it for the first time when the compound goes in.
+ * - `all-buffers`   — the buffer already in the well carries it too, at the same strength,
+ *   so the concentration is identical everywhere and never changes when compounds are added.
+ */
+export type Placement = 'compound-only' | 'all-buffers';
+
+/**
  * BSA carried by the diluents. Compounds often need a little carrier protein; the stock
  * they come in may or may not already contain it, so the diluents are premixed to the
  * target and each tube reports what it actually reaches.
  */
 export interface BsaSettings {
   enabled: boolean;
-  /** % BSA (w/v) wanted — read according to `basis`. */
+  /** % BSA (w/v) the buffers are prepared at. */
   targetPct: number;
-  /** % BSA (w/v) of the stock the diluents are made from, e.g. 5. */
+  /** % BSA (w/v) of the stock they are made from, e.g. 5. Varies between lots. */
   stockPct: number;
-  /**
-   * What `targetPct` refers to:
-   * - `buffer`  — the prepared diluent itself sits at that %, or
-   * - `in-well` — the well sits at that % after the compound side is diluted `inWellFactor`×.
-   */
-  basis: 'buffer' | 'in-well';
+  placement: Placement;
 }
 
 /** How to premix one diluent, from the bottom of the tube upwards. */
@@ -101,6 +122,11 @@ export interface DiluentRecipe {
   bsaStock_ul: number;
   /** The rest: plain assay buffer / furimazine solution. */
   base_ul: number;
+  /**
+   * Why `prepare_ul` is above `required_ul`: always rounding up (buffers are cheap), and
+   * sometimes scaling further so a small additive clears the pipetting minimum.
+   */
+  scaledUpFor: string[];
 }
 
 /** One compound's dilution series — a "block" in the spreadsheet. */
@@ -109,8 +135,11 @@ export interface CompoundBlock {
   name: string;
   /** `V` — volume needed at each step for the plate (µl). L `E11`. */
   volForWells_ul: number;
-  /** `f` — the dilution that happens when the tube is added to the well. L `E12`. */
-  dilutionFactor: number;
+  /**
+   * Normally every compound is added to the well the same way, so the experiment's addition
+   * governs. Set this only for a compound added differently. L `E12`.
+   */
+  dilutionFactorOverride: number | null;
   /** `S` — stock concentration (µM). L `E13`. */
   stockConc_uM: number;
   /** L `E14`. */
@@ -131,11 +160,10 @@ export interface DilutionExperiment {
   assayType: AssayType;
   /** Working DMSO fraction override (0.002 = 0.2 %); `null` = use the computed maximum. */
   dmsoOverride: number | null;
-  /**
-   * How much the tube is diluted on its way into the well, for the in-well DMSO figure.
-   * 2 for the usual 50 µl + 50 µl addition. L `E7`.
-   */
-  inWellFactor: number;
+  /** How the compound gets into the well — the one factor behind every calculation. */
+  addition: AdditionSettings;
+  /** Whether the buffer already in the well carries DMSO too. */
+  dmsoPlacement: Placement;
   blocks: CompoundBlock[];
   bsa: BsaSettings;
   /** Buffer recipes etc., carried onto the bench sheet so it is self-contained. */
@@ -191,7 +219,9 @@ export interface DilutionResult {
   computedTarget: number;
   /** L `E6` — override if set, else the computed maximum. */
   target: number;
-  /** L `E7` — `target / inWellFactor`. */
+  /** The dilution the compound undergoes on addition, e.g. 10 µl into 90 µl = 10×. */
+  additionFactor: number;
+  /** L `E7` — what the cells see, given where the DMSO lives. */
   inWellDmso: number;
   /** The fraction the diluents are premixed at, whatever basis the user chose. */
   bsaBufferFraction: number;
@@ -216,7 +246,12 @@ function usedRows(block: CompoundBlock): number[] {
  * Prepared volumes are computed bottom-up, because each tube has to carry the aliquot the
  * tube below will draw from it.
  */
-function geometry(block: CompoundBlock) {
+/** The addition factor this block is prepared against. */
+export function blockFactor(exp: DilutionExperiment, block: CompoundBlock): number {
+  return block.dilutionFactorOverride ?? additionFactor(exp.addition);
+}
+
+function geometry(block: CompoundBlock, factor: number) {
   const logMs = usedRows(block);
   const n = logMs.length;
   const conc = logMs.map(logMToUM);
@@ -234,7 +269,7 @@ function geometry(block: CompoundBlock) {
   for (let i = 0; i < n; i++) {
     aliquotIn[i] =
       i === 0
-        ? (volToPrepare[0] * conc[0] * block.dilutionFactor) / block.stockConc_uM
+        ? (volToPrepare[0] * conc[0] * factor) / block.stockConc_uM
         : (volToPrepare[i] * conc[i]) / conc[i - 1];
   }
 
@@ -244,32 +279,34 @@ function geometry(block: CompoundBlock) {
 }
 
 /** `E_top / D_top` — the DMSO fraction a DMSO-dissolved stock forces on its top tube. */
-export function dmsoLoadOf(block: CompoundBlock): number {
+export function dmsoLoadOf(block: CompoundBlock, factor: number): number {
   if (block.vehicle !== 'DMSO' || block.excludeFromVehicleMatch) return 0;
-  const g = geometry(block);
+  const g = geometry(block, factor);
   if (g.logMs.length === 0) return 0;
   return g.aliquotIn[0] / g.volToPrepare[0];
 }
 
 /** L `E4` — match the whole experiment to the worst case. */
-export function computeDmsoTarget(blocks: CompoundBlock[]): number {
-  return blocks.reduce((max, b) => Math.max(max, dmsoLoadOf(b)), 0);
+export function computeDmsoTarget(exp: DilutionExperiment): number {
+  return exp.blocks.reduce((max, b) => Math.max(max, dmsoLoadOf(b, blockFactor(exp, b))), 0);
 }
 
 /** The BSA fraction the diluents must be premixed at, given the chosen basis. */
 export function bsaBufferFraction(exp: DilutionExperiment): number {
-  const { bsa, inWellFactor } = exp;
-  if (!bsa.enabled || bsa.targetPct <= 0) return 0;
-  const wanted = bsa.targetPct / 100;
-  // "in-well" means the compound side is diluted `inWellFactor`× on its way into the well,
-  // so the buffer has to start that much stronger.
-  return bsa.basis === 'in-well' ? wanted * inWellFactor : wanted;
+  if (!exp.bsa.enabled || exp.bsa.targetPct <= 0) return 0;
+  return exp.bsa.targetPct / 100;
 }
 
-function computeBlock(block: CompoundBlock, target: number, bsaFrac: number): BlockResult {
+/** What the cells see: the same fraction when every buffer carries it, otherwise diluted. */
+function inWellFraction(bufferFraction: number, placement: Placement, factor: number): number {
+  if (bufferFraction === 0) return 0;
+  return placement === 'all-buffers' ? bufferFraction : bufferFraction / factor;
+}
+
+function computeBlock(block: CompoundBlock, factor: number, target: number, bsaFrac: number): BlockResult {
   const warnings: Warning[] = [];
   const scope = block.name || 'compound';
-  const { logMs, conc, volToPrepare, aliquotIn, leftForWells } = geometry(block);
+  const { logMs, conc, volToPrepare, aliquotIn, leftForWells } = geometry(block, factor);
   const n = logMs.length;
 
   // An excluded compound (the sheet's Terbium) is made up with DMSO-free diluent only.
@@ -301,7 +338,7 @@ function computeBlock(block: CompoundBlock, target: number, bsaFrac: number): Bl
       index: i,
       logM,
       conc_uM: conc[i],
-      tubeConc_uM: conc[i] * block.dilutionFactor,
+      tubeConc_uM: conc[i] * factor,
       volToPrepare_ul: d,
       aliquotIn_ul: e,
       aliquotFrom: i === 0 ? 'stock' : 'above',
@@ -378,15 +415,48 @@ function computeBlock(block: CompoundBlock, target: number, bsaFrac: number): Bl
     totalDmsoBuffer_ul: rows.reduce((a, r) => a + r.dmsoBuffer_ul, 0),
     stockNeeded_ul: n > 0 ? aliquotIn[0] : 0,
     isEmpty: n === 0,
-    dmsoLoad: dmsoLoadOf(block),
+    dmsoLoad: dmsoLoadOf(block, factor),
     unmatched: block.excludeFromVehicleMatch || blockTarget === 0,
     warnings,
   };
 }
 
-/** Volumes of each ingredient for one premixed diluent. */
-function recipe(name: string, required: number, dmsoFrac: number, bsaFrac: number, bsaStockPct: number): DiluentRecipe {
-  const prepare = ceilingTo1(required);
+/**
+ * Buffers are cheap and running out mid-prep is not, so a premix is always rounded *up* to
+ * a volume someone would actually measure out.
+ */
+export function roundUpPremix(v: number): number {
+  if (v <= 0) return 0;
+  const step = v <= 100 ? 10 : v <= 1000 ? 50 : v <= 5000 ? 100 : 500;
+  return Math.ceil(v / step - 1e-9) * step;
+}
+
+/**
+ * Volumes of each ingredient for one premixed diluent.
+ *
+ * Beyond rounding up, the prepared volume is raised further when it has to be: a 0.4 µl
+ * BSA or DMSO addition is not pipettable, and the fix is to make more diluent rather than
+ * to accept a volume nobody can measure.
+ */
+function recipe(
+  name: string,
+  required: number,
+  dmsoFrac: number,
+  bsaFrac: number,
+  bsaStockPct: number,
+): DiluentRecipe {
+  const scaledUpFor: string[] = [];
+
+  let prepare = roundUpPremix(required);
+  if (required > 0) {
+    // Smallest volume of diluent at which each additive clears the pipetting minimum.
+    const minForDmso = dmsoFrac > 0 ? MIN_PIPETTE_UL / dmsoFrac : 0;
+    const minForBsa = bsaFrac > 0 && bsaStockPct > 0 ? (MIN_PIPETTE_UL * bsaStockPct) / (100 * bsaFrac) : 0;
+    if (minForDmso > prepare) scaledUpFor.push('DMSO');
+    if (minForBsa > prepare) scaledUpFor.push('BSA');
+    prepare = roundUpPremix(Math.max(prepare, minForDmso, minForBsa));
+  }
+
   const dmso_ul = prepare * dmsoFrac;
   const bsaStock_ul = bsaStockPct > 0 ? (prepare * bsaFrac * 100) / bsaStockPct : 0;
   return {
@@ -396,20 +466,33 @@ function recipe(name: string, required: number, dmsoFrac: number, bsaFrac: numbe
     dmso_ul,
     bsaStock_ul,
     base_ul: Math.max(0, prepare - dmso_ul - bsaStock_ul),
+    scaledUpFor,
   };
+}
+
+/** Buffer that goes into the wells before the compounds do. */
+function wellBufferVolume(exp: DilutionExperiment): number {
+  const { compound_ul, inWell_ul } = exp.addition;
+  if (compound_ul <= 0 || inWell_ul <= 0) return 0;
+  const perStep = inWell_ul / compound_ul;
+  return exp.blocks.reduce((total, b) => {
+    const rows = b.logM.filter((v) => v !== null && Number.isFinite(v)).length;
+    return total + rows * b.volForWells_ul * b.margin * perStep;
+  }, 0);
 }
 
 export function computeDilutions(exp: DilutionExperiment): DilutionResult {
   const assay = ASSAY_PROFILES[exp.assayType];
-  const computedTarget = computeDmsoTarget(exp.blocks);
+  const factor = additionFactor(exp.addition);
+  const computedTarget = computeDmsoTarget(exp);
   const target = exp.dmsoOverride ?? computedTarget;
   const bsaFrac = bsaBufferFraction(exp);
-  const blocks = exp.blocks.map((b) => computeBlock(b, target, bsaFrac));
+  const blocks = exp.blocks.map((b) => computeBlock(b, blockFactor(exp, b), target, bsaFrac));
   const warnings: Warning[] = [];
 
   if (exp.dmsoOverride !== null && exp.dmsoOverride < computedTarget - 1e-12) {
     const worst = exp.blocks
-      .map((b) => ({ name: b.name, load: dmsoLoadOf(b) }))
+      .map((b) => ({ name: b.name, load: dmsoLoadOf(b, blockFactor(exp, b)) }))
       .sort((a, b) => b.load - a.load)[0];
     warnings.push({
       level: 'warn',
@@ -419,18 +502,23 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
     });
   }
 
-  const mismatched = exp.blocks.filter(
-    (b) => usedRows(b).length > 0 && Math.abs(b.dilutionFactor - exp.inWellFactor) > 1e-9,
+  const overridden = exp.blocks.filter(
+    (b) => usedRows(b).length > 0 && b.dilutionFactorOverride !== null && Math.abs(b.dilutionFactorOverride - factor) > 1e-9,
   );
-  if (target > 0 && mismatched.length > 0) {
+  if (overridden.length > 0) {
     warnings.push({
-      level: 'info',
-      code: 'in-well-factor-mismatch',
-      scope: 'DMSO matching',
-      message: `In-well DMSO is computed with a ${exp.inWellFactor}× addition, but ${mismatched
-        .map((b) => `${b.name || 'a block'} (${b.dilutionFactor}×)`)
-        .join(', ')} ${mismatched.length === 1 ? 'uses' : 'use'} a different dilution factor. Check the in-well factor matches how you add the compound.`,
+      level: 'warn',
+      code: 'block-factor-override',
+      scope: 'Addition',
+      message: `${overridden.map((b) => `${b.name || 'a compound'} (${b.dilutionFactorOverride}×)`).join(', ')} ${
+        overridden.length === 1 ? 'is' : 'are'
+      } added differently from the experiment's ${round(factor, 3)}× — so ${
+        overridden.length === 1 ? 'its well' : 'their wells'
+      } will not end at the same DMSO as the rest.`,
     });
+  }
+  if (exp.addition.compound_ul <= 0) {
+    warnings.push({ level: 'error', code: 'no-addition', scope: 'Addition', message: 'The volume of compound added to each well must be greater than 0.' });
   }
 
   const totalNormalBuffer_ul = blocks.reduce((a, b) => a + b.totalNormalBuffer_ul, 0);
@@ -449,37 +537,34 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
     }
   }
 
+  const bsaStockPct = exp.bsa.enabled ? exp.bsa.stockPct : 0;
+  const wellBsa = exp.bsa.placement === 'all-buffers' ? bsaFrac : 0;
+  const wellDmso = exp.dmsoPlacement === 'all-buffers' ? target : 0;
+
   const recipes = [
-    recipe(assay.normalBufferName, totalNormalBuffer_ul, 0, bsaFrac, exp.bsa.enabled ? exp.bsa.stockPct : 0),
-    recipe(assay.dmsoBufferName, totalDmsoBuffer_ul, target, bsaFrac, exp.bsa.enabled ? exp.bsa.stockPct : 0),
+    recipe(assay.normalBufferName, totalNormalBuffer_ul, 0, bsaFrac, bsaStockPct),
+    recipe(assay.dmsoBufferName, totalDmsoBuffer_ul, target, bsaFrac, bsaStockPct),
+    recipe('Well buffer (added before compounds)', wellBufferVolume(exp), wellDmso, wellBsa, bsaStockPct),
   ];
 
   for (const r of recipes) {
-    if (r.required_ul > 0 && r.bsaStock_ul > 0 && r.bsaStock_ul < MIN_PIPETTE_UL) {
-      warnings.push({
-        level: 'warn',
-        code: 'bsa-below-min-pipette',
-        scope: 'BSA',
-        message: `${r.name}: only ${r.bsaStock_ul.toFixed(3)} µl of BSA stock is needed — below the ${MIN_PIPETTE_UL} µl minimum. Prepare a larger volume of diluent, or use a weaker BSA stock.`,
-      });
-    }
-    if (r.required_ul > 0 && r.dmso_ul > 0 && r.dmso_ul < MIN_PIPETTE_UL) {
-      warnings.push({
-        level: 'warn',
-        code: 'dmso-below-min-pipette',
-        scope: 'DMSO matching',
-        message: `${r.name}: only ${r.dmso_ul.toFixed(3)} µl of DMSO is needed — below the ${MIN_PIPETTE_UL} µl minimum. Prepare a larger volume of diluent, or premix the DMSO in two steps.`,
-      });
-    }
+    if (r.scaledUpFor.length === 0) continue;
+    warnings.push({
+      level: 'info',
+      code: 'premix-scaled-up',
+      scope: 'Premix',
+      message: `${r.name}: scaled up from ${round(r.required_ul, 1)} µl to ${r.prepare_ul} µl so the ${r.scaledUpFor.join(' and ')} addition clears the ${MIN_PIPETTE_UL} µl pipetting minimum. Buffers are cheap; the leftover is deliberate. (A weaker ${r.scaledUpFor[0]} stock would need less.)`,
+    });
   }
 
   return {
     assay,
     computedTarget,
     target,
-    inWellDmso: exp.inWellFactor > 0 ? target / exp.inWellFactor : 0,
+    additionFactor: factor,
+    inWellDmso: inWellFraction(target, exp.dmsoPlacement, factor),
     bsaBufferFraction: bsaFrac,
-    bsaInWell: exp.inWellFactor > 0 ? bsaFrac / exp.inWellFactor : 0,
+    bsaInWell: inWellFraction(bsaFrac, exp.bsa.placement, factor),
     blocks,
     totalNormalBuffer_ul,
     totalDmsoBuffer_ul,

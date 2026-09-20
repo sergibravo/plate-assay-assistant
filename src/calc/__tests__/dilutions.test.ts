@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   computeDilutions,
   computeDmsoTarget,
+  roundUpPremix,
   type CompoundBlock,
   type DilutionExperiment,
 } from '../dilutions';
@@ -10,7 +11,7 @@ const block = (over: Partial<CompoundBlock> = {}): CompoundBlock => ({
   id: over.id ?? 'b',
   name: over.name ?? 'compound',
   volForWells_ul: 200,
-  dilutionFactor: 2,
+  dilutionFactorOverride: null,
   stockConc_uM: 10000,
   vehicle: 'aqueous',
   margin: 1,
@@ -21,12 +22,16 @@ const block = (over: Partial<CompoundBlock> = {}): CompoundBlock => ({
   ...over,
 });
 
-const NO_BSA = { enabled: false, targetPct: 0.01, stockPct: 5, basis: 'buffer' as const };
+const NO_BSA = { enabled: false, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' as const };
+
+/** 100 µl into 100 µl — the sheet's 50 + 50 addition, i.e. 2×. */
+const ADDITION_2X = { compound_ul: 100, inWell_ul: 100 };
 
 const experiment = (blocks: CompoundBlock[], over: Partial<DilutionExperiment> = {}): DilutionExperiment => ({
   assayType: 'NanoBiT/BRET',
   dmsoOverride: null,
-  inWellFactor: 2,
+  addition: ADDITION_2X,
+  dmsoPlacement: 'compound-only' as const,
   blocks,
   bsa: NO_BSA,
   bufferNotes: '',
@@ -40,7 +45,7 @@ const experiment = (blocks: CompoundBlock[], over: Partial<DilutionExperiment> =
 describe('back-propagation (Dilutions sheet)', () => {
   it('Ang II: single row, V=200, f=10, S=100 µM, logM −6', () => {
     const r = computeDilutions(
-      experiment([block({ name: 'AngII', dilutionFactor: 10, stockConc_uM: 100, logM: [-6] })]),
+      experiment([block({ name: 'AngII', dilutionFactorOverride: 10, stockConc_uM: 100, logM: [-6] })]),
     ).blocks[0];
 
     expect(r.rows).toHaveLength(1);
@@ -55,7 +60,7 @@ describe('back-propagation (Dilutions sheet)', () => {
 
   it('Losartan: two rows, S=30000 µM, logM −5 then −6', () => {
     const r = computeDilutions(
-      experiment([block({ name: 'Losartan', dilutionFactor: 10, stockConc_uM: 30000, logM: [-5, -6] })]),
+      experiment([block({ name: 'Losartan', dilutionFactorOverride: 10, stockConc_uM: 30000, logM: [-5, -6] })]),
     ).blocks[0];
 
     const [top, bottom] = r.rows;
@@ -71,7 +76,7 @@ describe('back-propagation (Dilutions sheet)', () => {
 
   it('Ang(1-7): a non-round logM still reproduces the sheet', () => {
     const r = computeDilutions(
-      experiment([block({ name: 'Ang(1-7)', dilutionFactor: 10, stockConc_uM: 1000, logM: [-4.52] })]),
+      experiment([block({ name: 'Ang(1-7)', dilutionFactorOverride: 10, stockConc_uM: 1000, logM: [-4.52] })]),
     ).blocks[0];
     expect(r.rows[0].conc_uM).toBeCloseTo(30.19951720402018, 12); // J10
     expect(r.rows[0].aliquotIn_ul).toBeCloseTo(60.39903440804036, 12); // L10
@@ -80,7 +85,7 @@ describe('back-propagation (Dilutions sheet)', () => {
 
   it('volumes grow towards the top, because each tube carries the one below it', () => {
     const r = computeDilutions(
-      experiment([block({ name: 'series', dilutionFactor: 2, stockConc_uM: 10000, logM: [-5, -6, -7, -8] })]),
+      experiment([block({ name: 'series', dilutionFactorOverride: 2, stockConc_uM: 10000, logM: [-5, -6, -7, -8] })]),
     ).blocks[0];
     const vols = r.rows.map((x) => x.volToPrepare_ul);
     expect(vols).toEqual([...vols].sort((a, b) => b - a));
@@ -105,7 +110,7 @@ describe('DMSO vehicle matching (Compounds sheet)', () => {
   });
 
   it('the working DMSO target computes to 0.002 (E4/E6)', () => {
-    expect(computeDmsoTarget([iso, nebi, carve])).toBeCloseTo(0.002, 12);
+    expect(computeDmsoTarget(experiment([iso, nebi, carve]))).toBeCloseTo(0.002, 12);
     expect(result.target).toBeCloseTo(0.002, 12);
   });
 
@@ -170,13 +175,13 @@ describe('matching rules', () => {
   it('an excluded DMSO compound does not drag the target up', () => {
     const excluded = block({ id: 'x', name: 'odd one', vehicle: 'DMSO', stockConc_uM: 100, logM: [-5], excludeFromVehicleMatch: true });
     const nebi = block({ id: 'nebi', name: 'Nebi', vehicle: 'DMSO', logM: [-5] });
-    expect(computeDmsoTarget([excluded, nebi])).toBeCloseTo(0.002, 12);
+    expect(computeDmsoTarget(experiment([excluded, nebi]))).toBeCloseTo(0.002, 12);
   });
 
   it('the whole experiment matches the worst DMSO load, not the average', () => {
     const mild = block({ id: 'a', name: 'mild', vehicle: 'DMSO', logM: [-5] }); // 0.002
     const harsh = block({ id: 'b', name: 'harsh', vehicle: 'DMSO', stockConc_uM: 1000, logM: [-5] }); // 0.02
-    expect(computeDmsoTarget([mild, harsh])).toBeCloseTo(0.02, 12);
+    expect(computeDmsoTarget(experiment([mild, harsh]))).toBeCloseTo(0.02, 12);
   });
 
   it('an override is honoured, and flagged when it is below what a stock brings in', () => {
@@ -186,17 +191,17 @@ describe('matching rules', () => {
     expect(r.warnings.some((w) => w.code === 'override-below-computed')).toBe(true);
   });
 
-  it('in-well DMSO follows the addition factor', () => {
-    const nebi = block({ name: 'Nebi', vehicle: 'DMSO', dilutionFactor: 5, logM: [-5] });
-    const r = computeDilutions(experiment([nebi], { inWellFactor: 5 }));
-    expect(r.inWellDmso).toBeCloseTo(r.target / 5, 12);
-    expect(r.warnings.some((w) => w.code === 'in-well-factor-mismatch')).toBe(false);
+  it('in-well DMSO follows the addition: 10 µl into 90 µl is 10×', () => {
+    const nebi = block({ name: 'Nebi', vehicle: 'DMSO', logM: [-5] });
+    const r = computeDilutions(experiment([nebi], { addition: { compound_ul: 10, inWell_ul: 90 } }));
+    expect(r.additionFactor).toBeCloseTo(10, 12);
+    expect(r.inWellDmso).toBeCloseTo(r.target / 10, 12);
   });
 
-  it('flags an in-well factor that disagrees with the block dilution factor', () => {
-    const nebi = block({ name: 'Nebi', vehicle: 'DMSO', dilutionFactor: 10, logM: [-5] });
-    const r = computeDilutions(experiment([nebi], { inWellFactor: 2 }));
-    expect(r.warnings.some((w) => w.code === 'in-well-factor-mismatch')).toBe(true);
+  it('flags a compound added differently from the rest', () => {
+    const nebi = block({ name: 'Nebi', vehicle: 'DMSO', dilutionFactorOverride: 10, logM: [-5] });
+    const r = computeDilutions(experiment([nebi]));
+    expect(r.warnings.some((w) => w.code === 'block-factor-override')).toBe(true);
   });
 });
 
@@ -258,7 +263,7 @@ describe('assay types', () => {
  * BSA from a 5 % stock.
  */
 describe('BSA in the diluents', () => {
-  const bsa = { enabled: true, targetPct: 0.01, stockPct: 5, basis: 'buffer' as const };
+  const bsa = { enabled: true, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' as const };
 
   it('is off by default and adds nothing', () => {
     const r = computeDilutions(experiment([block({ name: 'Iso', logM: [-5] })]));
@@ -291,12 +296,21 @@ describe('BSA in the diluents', () => {
     expect(r.blocks[0].rows[0].bsaFraction).toBeCloseTo(0.0001, 12);
   });
 
-  it('the in-well basis makes the diluent that much stronger', () => {
-    const r = computeDilutions(
-      experiment([block({ name: 'Iso', logM: [-5] })], { bsa: { ...bsa, basis: 'in-well' } }),
-    );
-    expect(r.bsaBufferFraction).toBeCloseTo(0.0002, 12); // 2× for the 2× addition
+  it('in every buffer, the well sits at the same % as the tubes', () => {
+    const r = computeDilutions(experiment([block({ name: 'Iso', logM: [-5] })], { bsa }));
+    expect(r.bsaBufferFraction).toBeCloseTo(0.0001, 12);
     expect(r.bsaInWell).toBeCloseTo(0.0001, 12);
+  });
+
+  it('in the compound only, the well lands a factor lower', () => {
+    const r = computeDilutions(
+      experiment([block({ name: 'Iso', logM: [-5] })], {
+        bsa: { ...bsa, placement: 'compound-only' },
+        addition: { compound_ul: 10, inWell_ul: 90 },
+      }),
+    );
+    expect(r.bsaBufferFraction).toBeCloseTo(0.0001, 12);
+    expect(r.bsaInWell).toBeCloseTo(0.00001, 12);
   });
 
   it('BSA and DMSO share the same diluents without fighting', () => {
@@ -325,16 +339,87 @@ describe('BSA in the diluents', () => {
     expect(r.warnings.some((w) => w.code === 'bsa-stock-too-weak')).toBe(true);
   });
 
-  it('warns when the BSA or DMSO volume is too small to pipette', () => {
+  it('makes more diluent rather than ask for an unpipettable BSA volume, and says so', () => {
     const r = computeDilutions(experiment([block({ name: 'Iso', volForWells_ul: 20, logM: [-5] })], { bsa }));
-    expect(r.warnings.some((w) => w.code === 'bsa-below-min-pipette')).toBe(true);
+    const normal = r.recipes[0];
+    expect(normal.scaledUpFor).toContain('BSA');
+    expect(normal.bsaStock_ul).toBeGreaterThanOrEqual(0.5);
+    expect(normal.prepare_ul).toBeGreaterThan(normal.required_ul);
+    const note = r.warnings.find((w) => w.code === 'premix-scaled-up');
+    expect(note?.level).toBe('info');
+    expect(note?.message).toMatch(/pipetting minimum/);
+  });
+});
+
+describe('premix volumes', () => {
+  const bsa = { enabled: true, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' as const };
+
+  it('rounds up to a volume someone would actually measure out', () => {
+    expect(roundUpPremix(0)).toBe(0);
+    expect(roundUpPremix(12)).toBe(20);
+    expect(roundUpPremix(100)).toBe(100);
+    expect(roundUpPremix(822.11)).toBe(850);
+    expect(roundUpPremix(2983.754)).toBe(3000);
+    expect(roundUpPremix(7200)).toBe(7500);
   });
 
-  it('recipes add up and are rounded up to whole µl to prepare', () => {
-    const r = computeDilutions(experiment([block({ name: 'Iso', logM: [-5, -6] })], { bsa }));
+  it('never prepares less than the compounds consume', () => {
+    const r = computeDilutions(
+      experiment([
+        block({ id: 'a', name: 'Iso', logM: [-5, -6, -7] }),
+        block({ id: 'b', name: 'Nebi', vehicle: 'DMSO', logM: [-5, -6, -7] }),
+      ], { bsa }),
+    );
     for (const x of r.recipes) {
       expect(x.prepare_ul).toBeGreaterThanOrEqual(x.required_ul);
-      expect(Number.isInteger(x.prepare_ul)).toBe(true);
+      expect(x.base_ul + x.dmso_ul + x.bsaStock_ul).toBeCloseTo(x.prepare_ul, 9);
     }
+  });
+
+  it('every additive it asks for is pipettable', () => {
+    const r = computeDilutions(
+      experiment([block({ name: 'Nebi', vehicle: 'DMSO', volForWells_ul: 20, logM: [-5] })], { bsa }),
+    );
+    for (const x of r.recipes) {
+      if (x.dmso_ul > 0) expect(x.dmso_ul).toBeGreaterThanOrEqual(0.5);
+      if (x.bsaStock_ul > 0) expect(x.bsaStock_ul).toBeGreaterThanOrEqual(0.5);
+    }
+  });
+});
+
+describe('where the DMSO sits', () => {
+  const nebi = block({ name: 'Nebi', vehicle: 'DMSO', logM: [-5, -6] });
+
+  it('compound only: the well buffer is DMSO-free and the well lands a factor lower', () => {
+    const r = computeDilutions(
+      experiment([nebi], { addition: { compound_ul: 10, inWell_ul: 90 }, dmsoPlacement: 'compound-only' }),
+    );
+    expect(r.inWellDmso).toBeCloseTo(r.target / 10, 12);
+    expect(r.recipes[2].dmso_ul).toBe(0);
+  });
+
+  it('every buffer: the well buffer carries the same DMSO, so nothing changes on addition', () => {
+    const r = computeDilutions(
+      experiment([nebi], { addition: { compound_ul: 10, inWell_ul: 90 }, dmsoPlacement: 'all-buffers' }),
+    );
+    expect(r.inWellDmso).toBeCloseTo(r.target, 12);
+    const wellBuffer = r.recipes[2];
+    expect(wellBuffer.dmso_ul).toBeCloseTo(wellBuffer.prepare_ul * r.target, 9);
+  });
+
+  it('the well buffer is sized from the addition: 90 µl per 10 µl of compound', () => {
+    const r = computeDilutions(
+      experiment([block({ name: 'Iso', volForWells_ul: 200, logM: [-5, -6] })], {
+        addition: { compound_ul: 10, inWell_ul: 90 },
+      }),
+    );
+    // two rows × 200 µl × margin 1 × (90/10)
+    expect(r.recipes[2].required_ul).toBeCloseTo(2 * 200 * 9, 9);
+  });
+
+  it('neither placement changes a tube volume', () => {
+    const a = computeDilutions(experiment([nebi], { dmsoPlacement: 'compound-only' }));
+    const b = computeDilutions(experiment([nebi], { dmsoPlacement: 'all-buffers' }));
+    expect(b.blocks[0].rows).toEqual(a.blocks[0].rows);
   });
 });

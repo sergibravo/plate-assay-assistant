@@ -89,14 +89,15 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
     [],
     section('DMSO VEHICLE MATCHING  (concentrations, not volumes)'),
     param('DMSO in every tube', pct(result.target)),
-    param('DMSO in the well', pct(result.inWellDmso), `after the ${exp.inWellFactor}× addition`),
+    param('DMSO in the well', pct(result.inWellDmso), exp.dmsoPlacement === 'all-buffers' ? 'every buffer carries it' : `after the ${round(result.additionFactor, 3)}× addition`),
     param('Set by', exp.dmsoOverride !== null ? 'a forced value' : result.computedTarget > 0 ? 'the worst DMSO stock' : 'no DMSO stocks in use'),
+    param('Added to the well', `${exp.addition.compound_ul} µl into ${exp.addition.inWell_ul} µl`, `= ${round(result.additionFactor, 3)}×`),
     ...(exp.bsa.enabled
       ? [
           [],
           section('BSA CARRIER'),
           param('BSA in every tube', pct(result.bsaBufferFraction)),
-          param('BSA in the well', pct(result.bsaInWell), `after the ${exp.inWellFactor}× addition`),
+          param('BSA in the well', pct(result.bsaInWell), exp.bsa.placement === 'all-buffers' ? 'every buffer carries it' : `after the ${round(result.additionFactor, 3)}× addition`),
           param('Made from a stock at', `${exp.bsa.stockPct} %`),
         ]
       : []),
@@ -117,6 +118,7 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
       { v: r.bsaStock_ul > 0 ? round(r.bsaStock_ul, 3) : '—', s: pipette() },
     ]),
     [{ v: result.target > 0 ? `The DMSO diluent is ${result.assay.diluent} premixed at ${pct(result.target)} DMSO; the other carries none.` : 'No DMSO stocks: plain diluent throughout.', s: muted() }],
+    [{ v: `Volumes are rounded up from what the compounds consume (${result.recipes.map((r) => `${r.name}: ${round(r.required_ul, 1)} µl`).join(' · ')}).`, s: muted() }],
   ];
 
   for (const note of result.assay.pending) rows.push([{ v: `Note: ${note}`, s: muted() }]);
@@ -150,7 +152,7 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
       });
 
       rows.push([{ v: `${b.name || 'compound'} — ${source.stockConc_uM} µM stock in ${source.vehicle}${source.excludeFromVehicleMatch ? ', not DMSO-matched' : ''}`, s: { font: { bold: true, sz: 12, color: { rgb: colour.head } } } }]);
-      rows.push([{ v: `${source.volForWells_ul} µl per step × ${source.margin} margin · ${source.dilutionFactor}× dilution on addition · take ${round(b.stockNeeded_ul, 3)} µl of stock`, s: muted() }]);
+      rows.push([{ v: `${source.volForWells_ul} µl per step × ${source.margin} margin · ${round(source.dilutionFactorOverride ?? result.additionFactor, 3)}× dilution on addition · take ${round(b.stockNeeded_ul, 3)} µl of stock`, s: muted() }]);
       rows.push([
         head('Conc. (logM)'),
         head('In tube (µM)'),

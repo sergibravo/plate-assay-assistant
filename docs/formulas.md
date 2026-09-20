@@ -72,10 +72,9 @@ block A2 → 6 ng / 0.6 µl HiBiT, filler 99.5 % → 1194 ng / 1.194 µl, totals
 
 Not built yet. Reference: T `Plate Layout`.
 
-## Module 3 — serial dilution + DMSO matching
+## Module 3 — serial dilution + DMSO matching (`src/calc/dilutions.ts`)
 
-Not built yet. Reference: L `Compounds` (improved), T `Dilutions` (precursor).
-Key cells already decoded for implementation:
+Built. Reference: L `Compounds` (improved), T `Dilutions` (precursor).
 
 | Quantity | Spreadsheet | Formula |
 | --- | --- | --- |
@@ -90,9 +89,43 @@ Key cells already decoded for implementation:
 | In-well DMSO | L `E7` | `target / 2` (the 50 µl + 50 µl addition) |
 | Left for wells | L `H18` | `IF(next empty, D_i, D_i − E_{i+1})` |
 
-Reference values to reproduce: three compounds, top row −5 (10 µM), V = 200, f = 2, m = 1,
-S = 10000 µM → each draws 0.4 µl stock; target = 0.002 (0.2 % working, 0.1 % in-well);
-Iso (aqueous) → Normal 0 µl / DMSO buffer 199.6 µl; Nebi & Carve (DMSO) → Normal 199.6 µl /
-DMSO buffer 0 µl. Ang II block from T `Dilutions`: V = 200, f = 10, S = 100 µM, logM −6 →
-prepare 200 µl, 20 µl stock, 180 µl buffer, 200 µl left for wells; Losartan (−5, −6;
-S = 30000 µM) → top tube 220 µl, 0.7333 µl stock, 200 µl left for wells.
+Reference values reproduced by the test suite: three compounds, top row −5 (10 µM), V = 200,
+f = 2, m = 1, S = 10000 µM → each draws 0.4 µl stock; target = 0.002 (0.2 % working, 0.1 %
+in-well); Iso (aqueous) → Normal 0 µl / DMSO buffer 199.6 µl; Nebi & Carve (DMSO) → Normal
+199.6 µl / DMSO buffer 0 µl. Ang II block from T `Dilutions`: V = 200, f = 10, S = 100 µM,
+logM −6 → prepare 200 µl, 20 µl stock, 180 µl buffer, 200 µl left for wells; Losartan
+(−5, −6; S = 30000 µM) → top tube 220 µl, 0.7333 µl stock, 200 µl left for wells;
+Ang(1-7) at logM −4.52 → 30.19951720402018 µM, 60.39903440804036 µl of a 1000 µM stock.
+
+### What the dilution factor means
+
+`f` is the dilution the tube undergoes **when it is added to the well**. The logM the user
+types is therefore the *final in-well* concentration, and each tube is prepared at `f ×`
+that — which is why the top aliquot carries the extra `× f` (`E_top = D_top·conc_top·f/S`)
+while the ratios between tubes, and so the rest of the chain, are unaffected. The same
+factor governs the in-well DMSO (`target / inWellFactor`); the app keeps it as a separate
+setting, defaulting to 2 for the usual 50 µl + 50 µl addition, and flags any block whose own
+`f` disagrees with it.
+
+### Assay types
+
+The assay type never changes a volume — it names the diluent and declares what is still
+outstanding (asserted by a test):
+
+| Assay | Compounds diluted in | Not yet calculated |
+| --- | --- | --- |
+| NanoBiT/BRET | assay buffer | substrate is a single addition |
+| HiBiT | assay buffer (identical maths) | the more involved substrate preparation |
+| DERET | **furimazine solution** | preparing that furimazine from its stock |
+
+### Additions beyond the sheet
+
+- An **excluded** compound (the sheet's Terbium) is made up with DMSO-free diluent only, and
+  never contributes to the computed target.
+- Validation: a stock too dilute to reach the top concentration, rows entered out of order,
+  aliquots below the 0.5 µl pipetting minimum, an override below the load a DMSO stock
+  already brings in, and a tube that cannot be matched exactly (reported with the fraction
+  it actually reaches).
+- Each row reports `dmsoFraction`, the DMSO the tube truly ends at. An aqueous top tube lands
+  a hair under target (199.6 µl of DMSO diluent cannot fill 200 µl); every other tube is
+  exact.

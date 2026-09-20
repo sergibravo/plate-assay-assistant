@@ -58,7 +58,11 @@ npm test
    per DNA tube is either a fixed volume added or a target final volume; the Excel bench
    sheet is colour-coded per condition.
 2. **Plate seeding & treatment layout** — not built yet.
-3. **Serial dilutions + DMSO vehicle matching** — not built yet.
+3. **Serial dilutions + DMSO vehicle matching** — ✅ built, compounds only
+   (`layout-aquous › Compounds`). Back-propagated prepared volumes, automatic DMSO matching
+   across aqueous and DMSO stocks, per-compound and whole-experiment premix totals, and an
+   assay-type selector (NanoBiT/BRET · HiBiT · DERET) that names the diluent and states what
+   each assay still needs. Substrate and furimazine preparation are not calculated yet.
 4. **Plate-reader output reshaper** — stub only, by design.
 
 ## Later: sharing it beyond this lab

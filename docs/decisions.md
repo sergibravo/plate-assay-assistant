@@ -70,6 +70,25 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
 - **Reference workbooks live in `reference/`** rather than only on the Desktop, so the source
   of truth travels with the code. They are snapshots; originals stay where they were.
 
+## Module 3 (2026-09-20)
+
+- **Assay type is a first-class setting** (NanoBiT/BRET · HiBiT · DERET). It never changes a
+  volume; it names the diluent and declares what that assay still needs. Built for
+  NanoBiT/BRET first, compounds only. HiBiT shares the compound maths exactly, so its numbers
+  are usable; DERET's are too, but its diluent must be the furimazine solution, which the app
+  does not yet prepare. Both say so on screen and on the bench sheet rather than staying
+  silent.
+- **logM is the final in-well concentration**, not the tube concentration. Each tube is
+  prepared at `dilutionFactor ×` that, matching the spreadsheet's `× f` on the top aliquot.
+- **The in-well dilution factor is a separate setting** (default 2, the 50 µl + 50 µl
+  addition) rather than being read from each block, because blocks can legitimately differ.
+  A block whose own factor disagrees with it is flagged.
+- **An excluded compound is made up with DMSO-free diluent only** and never drags the
+  matching target up — the sheet's "Terbium is never matched", made explicit.
+- **A missing project section must never blank the screen.** Projects are migrated on open, so
+  it cannot normally happen, but module 3 falls back to an empty section rather than throwing
+  mid-experiment.
+
 ## Open / deferred
 
 - Deeper UI polish (keyboard navigation, sidebar, density) waits until modules 2 and 3 exist,

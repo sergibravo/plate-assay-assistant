@@ -4,6 +4,7 @@
  * localStorage autosave for convenience. No server, no database.
  */
 
+import type { CompoundBlock, DilutionExperiment } from '../calc/dilutions';
 import type {
   Compound,
   DnaMixGrid,
@@ -12,7 +13,7 @@ import type {
   TransfectionParams,
 } from '../calc/types';
 
-export const PROJECT_VERSION = 2 as const;
+export const PROJECT_VERSION = 3 as const;
 
 export interface Project {
   version: typeof PROJECT_VERSION;
@@ -22,7 +23,10 @@ export interface Project {
   transfection: TransfectionParams;
   dnaStocks: DnaStock[];
   grid: DnaMixGrid;
+  /** Reusable compound inventory (module 3). */
   compounds: Compound[];
+  /** Module 3 — serial dilutions and DMSO matching. */
+  dilutions: DilutionExperiment;
   notes: string;
 }
 
@@ -145,6 +149,32 @@ export function enableCondition(c: TransfectionCondition, stocks: DnaStock[]): T
   };
 }
 
+/** A fresh compound block with room for a dose-response series. */
+export function newCompoundBlock(name = '', rows = 8): CompoundBlock {
+  return {
+    id: uid('cmp'),
+    name,
+    volForWells_ul: 200,
+    dilutionFactor: 2,
+    stockConc_uM: 10000,
+    vehicle: 'aqueous',
+    margin: 1,
+    excludeFromVehicleMatch: false,
+    logM: Array.from({ length: rows }, () => null),
+    notes: '',
+  };
+}
+
+export function emptyDilutions(): DilutionExperiment {
+  return {
+    assayType: 'NanoBiT/BRET',
+    dmsoOverride: null,
+    inWellFactor: 2,
+    blocks: [newCompoundBlock('Compound 1')],
+    bufferNotes: '',
+  };
+}
+
 /** A new project pre-loaded with the reference experiment's parameters. */
 export function newProject(name = 'Untitled experiment'): Project {
   const now = new Date().toISOString();
@@ -182,6 +212,7 @@ export function newProject(name = 'Untitled experiment'): Project {
     dnaStocks,
     grid,
     compounds: [],
+    dilutions: emptyDilutions(),
     notes: '',
   };
 }
@@ -204,9 +235,15 @@ export function migrate(raw: any): Project {
     }
     p.version = 2;
   }
+  if (p.version === 2) {
+    // v3 adds the module 3 (dilutions) section.
+    p.version = 3;
+  }
   p.dnaStocks = (p.dnaStocks ?? []).map((s: any) => ({ plasmidId: '', notes: '', ...s }));
   // Fields added after a project was saved fall back to the previous behaviour.
   p.transfection = { optimemMode: 'fixed', ...p.transfection };
+  p.dilutions = { ...emptyDilutions(), ...(p.dilutions ?? {}) };
+  p.dilutions.blocks = (p.dilutions.blocks ?? []).map((b: any) => ({ ...newCompoundBlock(), ...b }));
   p.compounds = p.compounds ?? [];
   p.notes = p.notes ?? '';
   return p as Project;

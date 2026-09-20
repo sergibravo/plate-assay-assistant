@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import './ui/styles.css';
 import { ConfirmButton } from './ui/components';
 import { Module1 } from './ui/Module1';
+import { Module3 } from './ui/Module3';
 import { downloadProject, loadLocal, migrate, newProject, saveLocal, type Project } from './state/project';
 
 type TabId = 'm1' | 'm2' | 'm3' | 'm4';
@@ -9,7 +10,7 @@ type TabId = 'm1' | 'm2' | 'm3' | 'm4';
 const TABS: { id: TabId; label: string; ready: boolean }[] = [
   { id: 'm1', label: '1 · Transfection', ready: true },
   { id: 'm2', label: '2 · Plate layout', ready: false },
-  { id: 'm3', label: '3 · Dilutions', ready: false },
+  { id: 'm3', label: '3 · Dilutions', ready: true },
   { id: 'm4', label: '4 · Reader output', ready: false },
 ];
 
@@ -81,7 +82,7 @@ export default function App() {
         )}
         {tab === 'm1' && <Module1 project={project} update={setProject} />}
         {tab === 'm2' && <div className="stub">Module 2 — plate seeding &amp; treatment layout. Not built yet.</div>}
-        {tab === 'm3' && <div className="stub">Module 3 — serial dilutions &amp; DMSO matching. Not built yet.</div>}
+        {tab === 'm3' && <Module3 project={project} update={setProject} />}
         {tab === 'm4' && <div className="stub">Module 4 — machine-output reshaper. Stub.</div>}
       </main>
     </>

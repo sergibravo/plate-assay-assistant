@@ -6,6 +6,7 @@ import {
   enableCondition,
   migrate,
   newProject,
+  PROJECT_VERSION,
   removeColumn,
   removeRowGroup,
 } from '../../state/project';
@@ -58,7 +59,22 @@ describe('enable / clear a condition', () => {
 });
 
 describe('project migration', () => {
-  it('converts v1 cells/well from millions to thousands and fills new fields', () => {
+  it('gives a v2 project an empty dilutions section', () => {
+    const v2 = {
+      version: 2,
+      name: 'old', createdAt: '', updatedAt: '', notes: '',
+      transfection: { cells_k_per_well: 30, optimemMode: 'fixed' },
+      dnaStocks: [], compounds: [],
+      grid: { cols: 1, rowGroups: 1, colLabels: [''], rowGroupLabels: [''], conditions: [[]] },
+    };
+    const m = migrate(v2);
+    expect(m.version).toBe(PROJECT_VERSION);
+    expect(m.dilutions.assayType).toBe('NanoBiT/BRET');
+    expect(m.dilutions.inWellFactor).toBe(2);
+    expect(m.dilutions.blocks.length).toBeGreaterThan(0);
+  });
+
+  it('converts v1 cells/well from millions to thousands and fills every field added since', () => {
     const v1 = {
       version: 1,
       name: 'old',
@@ -67,11 +83,13 @@ describe('project migration', () => {
       dnaStocks: [{ id: 'a', name: 'pcDNA', stockConc_ng_per_ul: 1000, isFiller: true }],
       grid: { cols: 1, rowGroups: 1, colLabels: [''], rowGroupLabels: [''], conditions: [[]] },
     };
+    // A v1 file is carried through every later step in one go, not just the next one.
     const m = migrate(v1) as any;
-    expect(m.version).toBe(2);
+    expect(m.version).toBe(PROJECT_VERSION);
     expect(m.transfection.cells_k_per_well).toBe(30);
     expect(m.transfection.cells_M_per_well).toBeUndefined();
     expect(m.dnaStocks[0].plasmidId).toBe('');
     expect(m.compounds).toEqual([]);
+    expect(m.dilutions.blocks[0].logM.every((v: number | null) => v === null)).toBe(true);
   });
 });

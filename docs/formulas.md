@@ -128,6 +128,12 @@ pipetting minimum: `V ≥ MIN/dmsoFraction` and `V ≥ MIN·stock% / (100·bsaFr
 recipe reports `scaledUpFor`, and the app says which additive forced it and what the
 required volume had been.
 
+The suggestion is only a suggestion: `premixOverrides` lets the user prepare a different
+volume per diluent, and the DMSO and BSA additions are recalculated for whatever they enter.
+An override replaces the automatic scale-up rather than competing with it, and is warned
+about when it falls below what the compounds consume, or when it leaves an additive under
+the pipetting minimum (the message names the volume that would clear it).
+
 ### Assay types
 
 The assay type never changes a volume — it names the diluent and declares what is still

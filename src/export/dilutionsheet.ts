@@ -111,7 +111,7 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
       { v: exp.bsa.enabled ? `BSA ${exp.bsa.stockPct} % (µl)` : 'BSA (µl)', s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
     ],
     ...result.recipes.map((r): Row => [
-      { v: r.name, s: pipetteLabel() },
+      { v: `${r.name}${r.overridden ? ' (volume you set)' : ''}`, s: pipetteLabel() },
       { v: r.prepare_ul, s: pipette() },
       { v: round(r.base_ul, 2), s: pipette() },
       { v: r.dmso_ul > 0 ? round(r.dmso_ul, 3) : '—', s: pipette() },

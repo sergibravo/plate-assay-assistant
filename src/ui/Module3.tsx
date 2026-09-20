@@ -259,10 +259,26 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
               </thead>
               <tbody>
                 {result.recipes.map((r) => (
-                  <tr key={r.name}>
+                  <tr key={r.id}>
                     <td>{r.name}</td>
                     <td className="num">{fmtVol(r.required_ul, 1)}</td>
-                    <td className="calc num">{r.prepare_ul}</td>
+                    <td className="input">
+                      <input
+                        type="number"
+                        step="any"
+                        placeholder={String(r.suggested_ul)}
+                        title={r.overridden ? `Clear to go back to the suggested ${r.suggested_ul} µl` : 'Suggested — type a different volume to prepare more'}
+                        value={exp.premixOverrides[r.id] ?? ''}
+                        onChange={(e) =>
+                          setExp({
+                            premixOverrides: {
+                              ...exp.premixOverrides,
+                              [r.id]: e.target.value === '' ? null : Number(e.target.value),
+                            },
+                          })
+                        }
+                      />
+                    </td>
                     <td className="calc num">{fmtVol(r.base_ul, 2)}</td>
                     <td className="calc num">{r.dmso_ul > 0 ? fmtVol(r.dmso_ul, 3) : '—'}</td>
                     <td className="calc num">{r.bsaStock_ul > 0 ? fmtVol(r.bsaStock_ul, 3) : '—'}</td>
@@ -271,9 +287,11 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
               </tbody>
             </table>
             <p className="hint">
-              Always rounded up — buffers are cheap and running short mid-prep is not. A premix is
-              raised further when a small DMSO or BSA addition would otherwise be unpipettable;
-              that is called out in the messages at the top.
+              The suggestion is always rounded up — buffers are cheap and running short mid-prep
+              is not — and raised further when a small DMSO or BSA addition would otherwise be
+              unpipettable, which is called out at the top. <strong>Type over it</strong> to
+              prepare a different volume; the DMSO and BSA are recalculated for whatever you
+              enter, and clearing the cell returns to the suggestion.
             </p>
           </div>
         </div>

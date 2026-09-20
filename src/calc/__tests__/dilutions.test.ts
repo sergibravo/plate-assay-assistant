@@ -32,6 +32,7 @@ const experiment = (blocks: CompoundBlock[], over: Partial<DilutionExperiment> =
   dmsoOverride: null,
   addition: ADDITION_2X,
   dmsoPlacement: 'compound-only' as const,
+  premixOverrides: { normal: null, dmso: null, well: null },
   blocks,
   bsa: NO_BSA,
   bufferNotes: '',
@@ -196,6 +197,12 @@ describe('matching rules', () => {
     const r = computeDilutions(experiment([nebi], { addition: { compound_ul: 10, inWell_ul: 90 } }));
     expect(r.additionFactor).toBeCloseTo(10, 12);
     expect(r.inWellDmso).toBeCloseTo(r.target / 10, 12);
+  });
+
+  it('rejects an impossible dilution on addition', () => {
+    const r = computeDilutions(experiment([block({ name: 'Nebi', dilutionFactorOverride: -21, logM: [-5] })]));
+    const w = r.warnings.find((x) => x.code === 'bad-factor-override');
+    expect(w?.level).toBe('error');
   });
 
   it('flags a compound added differently from the rest', () => {
@@ -384,6 +391,67 @@ describe('premix volumes', () => {
       if (x.dmso_ul > 0) expect(x.dmso_ul).toBeGreaterThanOrEqual(0.5);
       if (x.bsaStock_ul > 0) expect(x.bsaStock_ul).toBeGreaterThanOrEqual(0.5);
     }
+  });
+});
+
+describe('preparing a different volume', () => {
+  const bsa = { enabled: true, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' as const };
+  const blocks = [block({ name: 'Nebi', vehicle: 'DMSO', logM: [-5, -6] })];
+
+  it('the suggestion stands until the user types over it', () => {
+    const auto = computeDilutions(experiment(blocks, { bsa }));
+    const normal = auto.recipes[0];
+    expect(normal.overridden).toBe(false);
+    expect(normal.prepare_ul).toBe(normal.suggested_ul);
+  });
+
+  it('an override is used as-is, with the additives recalculated for it', () => {
+    const r = computeDilutions(
+      experiment(blocks, { bsa, premixOverrides: { normal: null, dmso: 5000, well: null } }),
+    );
+    const dmso = r.recipes[1];
+    expect(dmso.overridden).toBe(true);
+    expect(dmso.prepare_ul).toBe(5000);
+    expect(dmso.dmso_ul).toBeCloseTo(5000 * r.target, 9);
+    expect(dmso.bsaStock_ul).toBeCloseTo((5000 * 0.0001 * 100) / 5, 9);
+    expect(dmso.base_ul + dmso.dmso_ul + dmso.bsaStock_ul).toBeCloseTo(5000, 9);
+    // the suggestion is still reported, so the UI can offer it back
+    expect(dmso.suggested_ul).toBeGreaterThan(0);
+  });
+
+  it('warns when the volume set is less than the compounds consume', () => {
+    const r = computeDilutions(
+      experiment(blocks, { premixOverrides: { normal: null, dmso: 10, well: null } }),
+    );
+    expect(r.warnings.some((w) => w.code === 'premix-override-short')).toBe(true);
+  });
+
+  it('warns when the volume set makes an additive unpipettable, and names the fix', () => {
+    const r = computeDilutions(
+      experiment(blocks, { bsa, premixOverrides: { normal: 60, dmso: null, well: null } }),
+    );
+    const w = r.warnings.find((x) => x.code === 'premix-override-unpipettable');
+    expect(w?.message).toMatch(/BSA addition is only/);
+    expect(w?.message).toMatch(/would clear it/);
+  });
+
+  it('an override replaces the automatic scale-up rather than fighting it', () => {
+    const r = computeDilutions(
+      experiment([block({ name: 'Iso', volForWells_ul: 20, logM: [-5] })], {
+        bsa,
+        premixOverrides: { normal: 5000, dmso: null, well: null },
+      }),
+    );
+    expect(r.recipes[0].prepare_ul).toBe(5000);
+    expect(r.recipes[0].scaledUpFor).toEqual([]);
+    expect(r.warnings.some((w) => w.code === 'premix-scaled-up' && w.message.includes(r.recipes[0].name))).toBe(false);
+  });
+
+  it('clearing the override (null) goes back to the suggestion', () => {
+    const r = computeDilutions(
+      experiment(blocks, { bsa, premixOverrides: { normal: null, dmso: null, well: null } }),
+    );
+    expect(r.recipes.every((x) => !x.overridden)).toBe(true);
   });
 });
 

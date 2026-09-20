@@ -117,6 +117,11 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
   BSA carries the same choice, defaulting to `all-buffers`, which is how this lab prepares it.
 - **Premixes always round up.** Buffers are cheap; running out mid-preparation is not. Volumes
   go up to the next 10/50/100/500 µl, and the exact requirement is printed beside it.
+- **The prepared volume is a suggestion, not a verdict.** "Needed" and "Prepare" are both
+  shown, and Prepare is editable: someone wanting a round 5 ml, or topping up a bottle, types
+  it and the DMSO and BSA are recalculated for that volume. Clearing the cell returns to the
+  suggestion. The app warns rather than overrules when the number set is below what the
+  compounds consume, or leaves an additive unpipettable.
 - **An unpipettable additive raises the batch instead of raising a warning.** A 0.4 µl BSA
   addition used to produce a warning and leave the user to solve it; now the premix is scaled
   until the addition clears 0.5 µl, and the app says which additive forced it, what the

@@ -109,8 +109,11 @@ export interface BsaSettings {
   placement: Placement;
 }
 
+export type DiluentId = 'normal' | 'dmso' | 'well';
+
 /** How to premix one diluent, from the bottom of the tube upwards. */
 export interface DiluentRecipe {
+  id: DiluentId;
   name: string;
   /** Exactly what the blocks consume. */
   required_ul: number;
@@ -125,8 +128,13 @@ export interface DiluentRecipe {
   /**
    * Why `prepare_ul` is above `required_ul`: always rounding up (buffers are cheap), and
    * sometimes scaling further so a small additive clears the pipetting minimum.
+   * Empty when the user set the volume themselves.
    */
   scaledUpFor: string[];
+  /** The volume the app would prepare on its own, whether or not the user overrode it. */
+  suggested_ul: number;
+  /** True when `prepare_ul` is the user's number rather than the suggestion. */
+  overridden: boolean;
 }
 
 /** One compound's dilution series — a "block" in the spreadsheet. */
@@ -164,6 +172,11 @@ export interface DilutionExperiment {
   addition: AdditionSettings;
   /** Whether the buffer already in the well carries DMSO too. */
   dmsoPlacement: Placement;
+  /**
+   * Prepare more (or less) of a diluent than suggested. `null` = follow the suggestion.
+   * Someone topping up a stock bottle, or wanting a round 5 ml, sets it here.
+   */
+  premixOverrides: Record<DiluentId, number | null>;
   blocks: CompoundBlock[];
   bsa: BsaSettings;
   /** Buffer recipes etc., carried onto the bench sheet so it is self-contained. */
@@ -439,34 +452,43 @@ export function roundUpPremix(v: number): number {
  * to accept a volume nobody can measure.
  */
 function recipe(
+  id: DiluentId,
   name: string,
   required: number,
   dmsoFrac: number,
   bsaFrac: number,
   bsaStockPct: number,
+  override: number | null,
 ): DiluentRecipe {
   const scaledUpFor: string[] = [];
 
-  let prepare = roundUpPremix(required);
+  let suggested = roundUpPremix(required);
   if (required > 0) {
     // Smallest volume of diluent at which each additive clears the pipetting minimum.
     const minForDmso = dmsoFrac > 0 ? MIN_PIPETTE_UL / dmsoFrac : 0;
     const minForBsa = bsaFrac > 0 && bsaStockPct > 0 ? (MIN_PIPETTE_UL * bsaStockPct) / (100 * bsaFrac) : 0;
-    if (minForDmso > prepare) scaledUpFor.push('DMSO');
-    if (minForBsa > prepare) scaledUpFor.push('BSA');
-    prepare = roundUpPremix(Math.max(prepare, minForDmso, minForBsa));
+    if (minForDmso > suggested) scaledUpFor.push('DMSO');
+    if (minForBsa > suggested) scaledUpFor.push('BSA');
+    suggested = roundUpPremix(Math.max(suggested, minForDmso, minForBsa));
   }
+
+  // The user's number wins outright: they can see what it costs from the warnings.
+  const overridden = override !== null && override > 0;
+  const prepare = overridden ? override : suggested;
 
   const dmso_ul = prepare * dmsoFrac;
   const bsaStock_ul = bsaStockPct > 0 ? (prepare * bsaFrac * 100) / bsaStockPct : 0;
   return {
+    id,
     name,
     required_ul: required,
     prepare_ul: prepare,
+    suggested_ul: suggested,
+    overridden,
     dmso_ul,
     bsaStock_ul,
     base_ul: Math.max(0, prepare - dmso_ul - bsaStock_ul),
-    scaledUpFor,
+    scaledUpFor: overridden ? [] : scaledUpFor,
   };
 }
 
@@ -517,6 +539,17 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
       } will not end at the same DMSO as the rest.`,
     });
   }
+  const badOverride = exp.blocks.filter(
+    (b) => usedRows(b).length > 0 && b.dilutionFactorOverride !== null && b.dilutionFactorOverride <= 0,
+  );
+  for (const b of badOverride) {
+    warnings.push({
+      level: 'error',
+      code: 'bad-factor-override',
+      scope: b.name || 'compound',
+      message: `A dilution on addition of ${b.dilutionFactorOverride}× is impossible — it must be greater than 0. Clear the field to use the experiment's addition.`,
+    });
+  }
   if (exp.addition.compound_ul <= 0) {
     warnings.push({ level: 'error', code: 'no-addition', scope: 'Addition', message: 'The volume of compound added to each well must be greater than 0.' });
   }
@@ -541,20 +574,42 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
   const wellBsa = exp.bsa.placement === 'all-buffers' ? bsaFrac : 0;
   const wellDmso = exp.dmsoPlacement === 'all-buffers' ? target : 0;
 
+  const ov = exp.premixOverrides ?? { normal: null, dmso: null, well: null };
   const recipes = [
-    recipe(assay.normalBufferName, totalNormalBuffer_ul, 0, bsaFrac, bsaStockPct),
-    recipe(assay.dmsoBufferName, totalDmsoBuffer_ul, target, bsaFrac, bsaStockPct),
-    recipe('Well buffer (added before compounds)', wellBufferVolume(exp), wellDmso, wellBsa, bsaStockPct),
+    recipe('normal', assay.normalBufferName, totalNormalBuffer_ul, 0, bsaFrac, bsaStockPct, ov.normal),
+    recipe('dmso', assay.dmsoBufferName, totalDmsoBuffer_ul, target, bsaFrac, bsaStockPct, ov.dmso),
+    recipe('well', 'Well buffer (added before compounds)', wellBufferVolume(exp), wellDmso, wellBsa, bsaStockPct, ov.well),
   ];
 
   for (const r of recipes) {
-    if (r.scaledUpFor.length === 0) continue;
-    warnings.push({
-      level: 'info',
-      code: 'premix-scaled-up',
-      scope: 'Premix',
-      message: `${r.name}: scaled up from ${round(r.required_ul, 1)} µl to ${r.prepare_ul} µl so the ${r.scaledUpFor.join(' and ')} addition clears the ${MIN_PIPETTE_UL} µl pipetting minimum. Buffers are cheap; the leftover is deliberate. (A weaker ${r.scaledUpFor[0]} stock would need less.)`,
-    });
+    if (r.scaledUpFor.length > 0) {
+      warnings.push({
+        level: 'info',
+        code: 'premix-scaled-up',
+        scope: 'Premix',
+        message: `${r.name}: scaled up from ${round(r.required_ul, 1)} µl to ${r.prepare_ul} µl so the ${r.scaledUpFor.join(' and ')} addition clears the ${MIN_PIPETTE_UL} µl pipetting minimum. Buffers are cheap; the leftover is deliberate. (A weaker ${r.scaledUpFor[0]} stock would need less.)`,
+      });
+    }
+    if (!r.overridden) continue;
+
+    if (r.prepare_ul + 1e-9 < r.required_ul) {
+      warnings.push({
+        level: 'warn',
+        code: 'premix-override-short',
+        scope: 'Premix',
+        message: `${r.name}: you set ${r.prepare_ul} µl, but the compounds consume ${round(r.required_ul, 1)} µl — you will run out.`,
+      });
+    }
+    for (const [additive, volume] of [['DMSO', r.dmso_ul], ['BSA', r.bsaStock_ul]] as const) {
+      if (volume > 0 && volume < MIN_PIPETTE_UL) {
+        warnings.push({
+          level: 'warn',
+          code: 'premix-override-unpipettable',
+          scope: 'Premix',
+          message: `${r.name}: at ${r.prepare_ul} µl the ${additive} addition is only ${volume.toFixed(3)} µl — below the ${MIN_PIPETTE_UL} µl minimum. ${r.suggested_ul} µl would clear it.`,
+        });
+      }
+    }
   }
 
   return {

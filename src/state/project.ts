@@ -172,6 +172,7 @@ export function emptyDilutions(): DilutionExperiment {
     dmsoOverride: null,
     addition: { compound_ul: 10, inWell_ul: 90 },
     dmsoPlacement: 'compound-only',
+    premixOverrides: { normal: null, dmso: null, well: null },
     blocks: [newCompoundBlock('Compound 1')],
     bsa: { enabled: false, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' },
     bufferNotes: '',
@@ -250,6 +251,7 @@ export function migrate(raw: any): Project {
   const hadAddition = storedDilutions.addition !== undefined;
   p.dilutions = { ...emptyDilutions(), ...storedDilutions };
   p.dilutions.bsa = { ...emptyDilutions().bsa, ...(p.dilutions.bsa ?? {}) };
+  p.dilutions.premixOverrides = { ...emptyDilutions().premixOverrides, ...(p.dilutions.premixOverrides ?? {}) };
   // The addition used to be split between a global in-well factor and a per-block dilution
   // factor; it is now one setting, expressed as the volumes actually pipetted.
   if (p.dilutions.inWellFactor !== undefined && !hadAddition) {

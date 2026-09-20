@@ -136,14 +136,35 @@ the pipetting minimum (the message names the volume that would clear it).
 
 ### Assay types
 
-The assay type never changes a volume — it names the diluent and declares what is still
-outstanding (asserted by a test):
+The assay type never changes a compound volume — it names the diluent, supplies the
+substrate defaults, and declares what is still outstanding (asserted by a test):
 
-| Assay | Compounds diluted in | Not yet calculated |
-| --- | --- | --- |
-| NanoBiT/BRET | assay buffer | substrate is a single addition |
-| HiBiT | assay buffer (identical maths) | the more involved substrate preparation |
-| DERET | **furimazine solution** | preparing that furimazine from its stock |
+| Assay | Compounds diluted in | Substrate default | Not yet calculated |
+| --- | --- | --- | --- |
+| NanoBiT/BRET | assay buffer | 10 µl/well, 1:1000 in the well, 1× after compounds | — |
+| HiBiT | assay buffer (identical maths) | 50 µl/well kit recipe: substrate 1:100, LgBiT 1:200 | — |
+| DERET | **furimazine solution** | off | preparing the furimazine the compounds are diluted in |
+
+### Substrate (`src/calc/substrate.ts`)
+
+The well is assay buffer + substrate + compound. The substrate solution is prepared in the
+same assay buffer as the well, so it is premixed alongside the other diluents and carries
+their DMSO and BSA when placement says the well buffer does.
+
+| Quantity | Formula |
+| --- | --- |
+| Fold in the well | `after-compounds`: `(inWell + compound) / substrateVol` · `before-compounds`: `inWell / substrateVol` · `as-prepared`: none |
+| Prepared dilution | basis `in-well`: `quoted / fold` · basis `prepared`: as quoted |
+| In-well dilution | `prepared × fold`, or `null` when not fold-corrected |
+| Volume to prepare | `volumePerWell × wells × margin`, then the usual premix rounding |
+| Stock per component | `prepared volume / prepared dilution` |
+| Plain well buffer | `inWell − substrateVol` per well, so the substrate's share is not counted twice |
+
+Worked case: 80 µl assay buffer + 10 µl substrate + 10 µl compound, furimazine 1:1000 in the
+well → fold 10×, prepared 1:100, and 12 µl of stock in 1200 µl of solution. Referenced
+*before* the compounds instead, fold is 9× and the solution is 1:111.1. For HiBiT the quoted
+1:100 and 1:200 are the prepared recipe and no in-well figure is claimed, because adding it
+as a kit reagent is not fold-corrected.
 
 ### BSA carrier (not in the sheet)
 

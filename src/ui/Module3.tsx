@@ -9,6 +9,7 @@ import {
 import type { Vehicle } from '../calc/types';
 import { fmtVol, logMToUM, round } from '../calc/units';
 import { exportDilutionsXlsx } from '../export/dilutionsheet';
+import { defaultSubstrate, newSubstrateComponent, type SubstrateReference } from '../calc/substrate';
 import { emptyDilutions, newCompoundBlock, type Project } from '../state/project';
 import { CalcField, ConfirmButton, Legend, NumField, Panel, Segmented, Warnings } from './components';
 
@@ -32,6 +33,11 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
 
   const setExp = (patch: Partial<typeof exp>) =>
     update({ ...project, dilutions: { ...exp, ...patch } });
+
+  const sub = exp.substrate;
+  const setSub = (patch: Partial<typeof sub>) => setExp({ substrate: { ...sub, ...patch } });
+  const setComponent = (id: string, patch: Partial<(typeof sub.components)[number]>) =>
+    setSub({ components: sub.components.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
 
   const setBlock = (id: string, patch: Partial<CompoundBlock>) =>
     setExp({ blocks: exp.blocks.map((b) => (b.id === id ? { ...b, ...patch } : b)) });
@@ -190,6 +196,143 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
         <Legend />
       </Panel>
 
+      <Panel
+        title="Substrate"
+        actions={
+          <div className="no-print" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <button
+              className="btn small"
+              title={`Replace these settings with the usual ${exp.assayType} recipe`}
+              onClick={() => setExp({ substrate: defaultSubstrate(exp.assayType) })}
+            >
+              Load {exp.assayType} defaults
+            </button>
+            <div className="field" style={{ margin: 0, gridTemplateColumns: 'auto auto' }}>
+              <label style={{ fontSize: 11.5, color: '#667085' }}>prepare substrate</label>
+              <input
+                type="checkbox"
+                checked={sub.enabled}
+                onChange={(e) => setSub({ enabled: e.target.checked })}
+                style={{ width: 16 }}
+              />
+            </div>
+          </div>
+        }
+      >
+        {sub.enabled ? (
+          <>
+            <div className="grid-2">
+              <div>
+                <NumField label="Substrate added" unit="µl per well" value={sub.volumePerWell_ul} onChange={(v) => setSub({ volumePerWell_ul: v })} />
+                <NumField label="Wells to measure" unit="wells" value={sub.wells} step={1} onChange={(v) => setSub({ wells: v })} />
+                <NumField label="Margin" unit="×" value={sub.margin} step={0.1} onChange={(v) => setSub({ margin: v })} />
+                <CalcField label="→ prepare" unit="µl" value={result.substrate.required_ul} decimals={1} strong />
+                <p className="hint">
+                  The well then holds {fmtVol(result.substrate.assayBufferPerWell_ul, 1)} µl of plain{' '}
+                  {result.assay.diluent} + {fmtVol(sub.volumePerWell_ul, 1)} µl substrate +{' '}
+                  {fmtVol(exp.addition.compound_ul, 1)} µl compound. The substrate solution is made up
+                  in the same {result.assay.diluent} as the well, so it carries whatever that does.
+                </p>
+              </div>
+              <div>
+                <div className="field">
+                  <label>Dilutions below are</label>
+                  <div style={{ gridColumn: '2 / span 2' }}>
+                    <Segmented
+                      value={sub.basis}
+                      options={[
+                        { value: 'in-well' as const, label: 'final in the well' },
+                        { value: 'prepared' as const, label: 'in the solution' },
+                      ]}
+                      onChange={(v) => setSub({ basis: v })}
+                    />
+                  </div>
+                </div>
+                <div className="field">
+                  <label>Spiked to be 1×</label>
+                  <div style={{ gridColumn: '2 / span 2' }}>
+                    <Segmented
+                      value={sub.reference}
+                      options={[
+                        { value: 'after-compounds' as SubstrateReference, label: 'after compounds' },
+                        { value: 'before-compounds' as SubstrateReference, label: 'before compounds' },
+                        { value: 'as-prepared' as SubstrateReference, label: 'kit recipe' },
+                      ]}
+                      onChange={(v) => setSub({ reference: v })}
+                    />
+                  </div>
+                </div>
+                <CalcField
+                  label="= diluted in the well by"
+                  unit="×"
+                  value={result.substrate.foldFactor}
+                  decimals={3}
+                />
+                <p className="hint">
+                  {result.substrate.foldFactor === null
+                    ? 'Kit recipe: the solution is added as prepared, so no in-well dilution is claimed for it.'
+                    : sub.reference === 'after-compounds'
+                      ? `1× once everything is in the well: ${fmtVol(exp.addition.inWell_ul + exp.addition.compound_ul, 1)} µl ÷ ${fmtVol(sub.volumePerWell_ul, 1)} µl.`
+                      : `1× in the well before compounds: ${fmtVol(exp.addition.inWell_ul, 1)} µl ÷ ${fmtVol(sub.volumePerWell_ul, 1)} µl.`}
+                </p>
+              </div>
+            </div>
+
+            <table style={{ marginTop: 10 }}>
+              <thead>
+                <tr>
+                  <th>Component</th>
+                  <th className="num" style={{ width: 120 }}>1:N {sub.basis === 'in-well' ? 'in the well' : 'in the solution'}</th>
+                  <th className="num">1:N in the solution</th>
+                  <th className="num">1:N in the well</th>
+                  <th className="num">Stock to add (µl)</th>
+                  <th>Notes</th>
+                  <th className="no-print" style={{ width: 36 }} />
+                </tr>
+              </thead>
+              <tbody>
+                {sub.components.map((c, i) => {
+                  const res = result.substrate.components[i];
+                  return (
+                    <tr key={c.id}>
+                      <td className="input">
+                        <input style={{ textAlign: 'left' }} value={c.name} onChange={(e) => setComponent(c.id, { name: e.target.value })} />
+                      </td>
+                      <td className="input">
+                        <input type="number" step="any" value={c.dilution} onChange={(e) => setComponent(c.id, { dilution: Number(e.target.value) })} />
+                      </td>
+                      <td className="calc num">{res ? round(res.preparedDilution, 2) : ''}</td>
+                      <td className="calc num">{res?.inWellDilution ? round(res.inWellDilution, 2) : '—'}</td>
+                      <td className="calc num">{res ? fmtVol(res.stock_ul, 3) : ''}</td>
+                      <td className="input">
+                        <input style={{ textAlign: 'left' }} value={c.notes} onChange={(e) => setComponent(c.id, { notes: e.target.value })} />
+                      </td>
+                      <td className="no-print">
+                        <ConfirmButton onConfirm={() => setSub({ components: sub.components.filter((x) => x.id !== c.id) })}>✕</ConfirmButton>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <button
+              className="btn small no-print"
+              style={{ marginTop: 8 }}
+              onClick={() => setSub({ components: [...sub.components, newSubstrateComponent('')] })}
+            >
+              + Component
+            </button>
+          </>
+        ) : (
+          <p className="hint">
+            No substrate prepared for this experiment.{' '}
+            {exp.assayType === 'DERET'
+              ? 'For DERET the compounds themselves are diluted in furimazine — that preparation is not calculated yet.'
+              : 'Switch it on to work out the volumes.'}
+          </p>
+        )}
+      </Panel>
+
       <Panel title="BSA carrier & premix recipe">
         <div className="grid-2">
           <div>
@@ -255,6 +398,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                   <th className="num">{result.assay.diluent} (µl)</th>
                   <th className="num">DMSO (µl)</th>
                   <th className="num">BSA {exp.bsa.enabled ? `${exp.bsa.stockPct} %` : ''} (µl)</th>
+                  <th className="num">Other ingredients (µl)</th>
                 </tr>
               </thead>
               <tbody>
@@ -282,6 +426,11 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                     <td className="calc num">{fmtVol(r.base_ul, 2)}</td>
                     <td className="calc num">{r.dmso_ul > 0 ? fmtVol(r.dmso_ul, 3) : '—'}</td>
                     <td className="calc num">{r.bsaStock_ul > 0 ? fmtVol(r.bsaStock_ul, 3) : '—'}</td>
+                    <td className="calc num">
+                      {r.components.length > 0
+                        ? r.components.map((c) => `${c.name}: ${fmtVol(c.volume_ul, 3)}`).join(' · ')
+                        : '—'}
+                    </td>
                   </tr>
                 ))}
               </tbody>

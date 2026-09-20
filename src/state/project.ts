@@ -5,6 +5,7 @@
  */
 
 import { additionFactor, type CompoundBlock, type DilutionExperiment } from '../calc/dilutions';
+import { defaultSubstrate } from '../calc/substrate';
 import type {
   Compound,
   DnaMixGrid,
@@ -172,7 +173,8 @@ export function emptyDilutions(): DilutionExperiment {
     dmsoOverride: null,
     addition: { compound_ul: 10, inWell_ul: 90 },
     dmsoPlacement: 'compound-only',
-    premixOverrides: { normal: null, dmso: null, well: null },
+    premixOverrides: { normal: null, dmso: null, well: null, substrate: null },
+    substrate: defaultSubstrate('NanoBiT/BRET'),
     blocks: [newCompoundBlock('Compound 1')],
     bsa: { enabled: false, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' },
     bufferNotes: '',
@@ -252,6 +254,7 @@ export function migrate(raw: any): Project {
   p.dilutions = { ...emptyDilutions(), ...storedDilutions };
   p.dilutions.bsa = { ...emptyDilutions().bsa, ...(p.dilutions.bsa ?? {}) };
   p.dilutions.premixOverrides = { ...emptyDilutions().premixOverrides, ...(p.dilutions.premixOverrides ?? {}) };
+  p.dilutions.substrate = p.dilutions.substrate ?? defaultSubstrate(p.dilutions.assayType ?? 'NanoBiT/BRET');
   // The addition used to be split between a global in-well factor and a per-block dilution
   // factor; it is now one setting, expressed as the volumes actually pipetted.
   if (p.dilutions.inWellFactor !== undefined && !hadAddition) {

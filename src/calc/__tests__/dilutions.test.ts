@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { defaultSubstrate } from '../substrate';
 import {
   computeDilutions,
   computeDmsoTarget,
@@ -32,7 +33,8 @@ const experiment = (blocks: CompoundBlock[], over: Partial<DilutionExperiment> =
   dmsoOverride: null,
   addition: ADDITION_2X,
   dmsoPlacement: 'compound-only' as const,
-  premixOverrides: { normal: null, dmso: null, well: null },
+  premixOverrides: { normal: null, dmso: null, well: null, substrate: null },
+  substrate: { ...defaultSubstrate('NanoBiT/BRET'), enabled: false },
   blocks,
   bsa: NO_BSA,
   bufferNotes: '',
@@ -379,7 +381,8 @@ describe('premix volumes', () => {
     );
     for (const x of r.recipes) {
       expect(x.prepare_ul).toBeGreaterThanOrEqual(x.required_ul);
-      expect(x.base_ul + x.dmso_ul + x.bsaStock_ul).toBeCloseTo(x.prepare_ul, 9);
+      const componentVolume = x.components.reduce((a, c) => a + c.volume_ul, 0);
+      expect(x.base_ul + x.dmso_ul + x.bsaStock_ul + componentVolume).toBeCloseTo(x.prepare_ul, 9);
     }
   });
 
@@ -407,7 +410,7 @@ describe('preparing a different volume', () => {
 
   it('an override is used as-is, with the additives recalculated for it', () => {
     const r = computeDilutions(
-      experiment(blocks, { bsa, premixOverrides: { normal: null, dmso: 5000, well: null } }),
+      experiment(blocks, { bsa, premixOverrides: { normal: null, dmso: 5000, well: null, substrate: null } }),
     );
     const dmso = r.recipes[1];
     expect(dmso.overridden).toBe(true);
@@ -421,14 +424,14 @@ describe('preparing a different volume', () => {
 
   it('warns when the volume set is less than the compounds consume', () => {
     const r = computeDilutions(
-      experiment(blocks, { premixOverrides: { normal: null, dmso: 10, well: null } }),
+      experiment(blocks, { premixOverrides: { normal: null, dmso: 10, well: null, substrate: null } }),
     );
     expect(r.warnings.some((w) => w.code === 'premix-override-short')).toBe(true);
   });
 
   it('warns when the volume set makes an additive unpipettable, and names the fix', () => {
     const r = computeDilutions(
-      experiment(blocks, { bsa, premixOverrides: { normal: 60, dmso: null, well: null } }),
+      experiment(blocks, { bsa, premixOverrides: { normal: 60, dmso: null, well: null, substrate: null } }),
     );
     const w = r.warnings.find((x) => x.code === 'premix-override-unpipettable');
     expect(w?.message).toMatch(/BSA addition is only/);
@@ -439,7 +442,7 @@ describe('preparing a different volume', () => {
     const r = computeDilutions(
       experiment([block({ name: 'Iso', volForWells_ul: 20, logM: [-5] })], {
         bsa,
-        premixOverrides: { normal: 5000, dmso: null, well: null },
+        premixOverrides: { normal: 5000, dmso: null, well: null, substrate: null },
       }),
     );
     expect(r.recipes[0].prepare_ul).toBe(5000);
@@ -449,7 +452,7 @@ describe('preparing a different volume', () => {
 
   it('clearing the override (null) goes back to the suggestion', () => {
     const r = computeDilutions(
-      experiment(blocks, { bsa, premixOverrides: { normal: null, dmso: null, well: null } }),
+      experiment(blocks, { bsa, premixOverrides: { normal: null, dmso: null, well: null, substrate: null } }),
     );
     expect(r.recipes.every((x) => !x.overridden)).toBe(true);
   });

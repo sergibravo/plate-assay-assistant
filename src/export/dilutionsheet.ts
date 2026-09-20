@@ -109,6 +109,7 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
       { v: `${result.assay.diluent} (µl)`, s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
       { v: 'DMSO (µl)', s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
       { v: exp.bsa.enabled ? `BSA ${exp.bsa.stockPct} % (µl)` : 'BSA (µl)', s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
+      { v: 'Other ingredients (µl)', s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
     ],
     ...result.recipes.map((r): Row => [
       { v: `${r.name}${r.overridden ? ' (volume you set)' : ''}`, s: pipetteLabel() },
@@ -116,6 +117,7 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
       { v: round(r.base_ul, 2), s: pipette() },
       { v: r.dmso_ul > 0 ? round(r.dmso_ul, 3) : '—', s: pipette() },
       { v: r.bsaStock_ul > 0 ? round(r.bsaStock_ul, 3) : '—', s: pipette() },
+      { v: r.components.length > 0 ? r.components.map((c) => `${c.name}: ${round(c.volume_ul, 3)}`).join(' · ') : '—', s: pipette() },
     ]),
     [{ v: result.target > 0 ? `The DMSO diluent is ${result.assay.diluent} premixed at ${pct(result.target)} DMSO; the other carries none.` : 'No DMSO stocks: plain diluent throughout.', s: muted() }],
     [{ v: `Volumes are rounded up from what the compounds consume (${result.recipes.map((r) => `${r.name}: ${round(r.required_ul, 1)} µl`).join(' · ')}).`, s: muted() }],
@@ -124,6 +126,38 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
   for (const note of result.assay.pending) rows.push([{ v: `Note: ${note}`, s: muted() }]);
   if (exp.bufferNotes.trim()) {
     rows.push([], section('BUFFER RECIPES'), [{ v: exp.bufferNotes, s: label() }]);
+  }
+
+  if (result.substrate.enabled) {
+    const sub = exp.substrate;
+    rows.push([], section('SUBSTRATE'));
+    rows.push(...[
+      param('Added per well', `${sub.volumePerWell_ul} µl`, `into ${round(result.substrate.assayBufferPerWell_ul, 1)} µl of ${result.assay.diluent}`),
+      param('Wells × margin', `${sub.wells} × ${sub.margin}`, `= ${round(result.substrate.required_ul, 1)} µl to prepare`),
+      param(
+        'Diluted in the well by',
+        result.substrate.foldFactor === null ? 'used as prepared (kit recipe)' : `${round(result.substrate.foldFactor, 3)}×`,
+        result.substrate.foldFactor === null ? '' : sub.reference === 'after-compounds' ? '1× after the compounds' : '1× before the compounds',
+      ),
+    ]);
+    rows.push([
+      { v: 'Component', s: { font: { bold: true } } },
+      { v: '1:N in the solution', s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
+      { v: '1:N in the well', s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
+      { v: 'Stock to add (µl)', s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
+      { v: 'Notes', s: { font: { bold: true } } },
+    ]);
+    for (const c of result.substrate.components) {
+      rows.push([
+        { v: c.name, s: label() },
+        { v: round(c.preparedDilution, 2), s: value() },
+        { v: c.inWellDilution ? round(c.inWellDilution, 2) : '—', s: value() },
+        { v: round(c.stock_ul, 3), s: pipette() },
+        { v: c.notes, s: muted() },
+      ]);
+    }
+    rows.push([{ v: `Make the substrate solution up in the same ${result.assay.diluent} as the well — see the premix table above.`, s: muted() }]);
+    if (sub.notes.trim()) rows.push([{ v: sub.notes, s: muted() }]);
   }
 
   rows.push([]);
@@ -188,7 +222,8 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
 
   rows.push(
     section('ORDER OF WORK'),
-    [{ v: `1. Premix the two diluents above (${result.assay.diluent}).`, s: label() }],
+    [{ v: `1. Premix the diluents above — all of them in ${result.assay.diluent}.`, s: label() }],
+    ...(result.substrate.enabled ? [[{ v: '1b. Prepare the substrate solution in that same buffer.', s: label() }] as Row] : []),
     [{ v: '2. For each compound, start at the top tube: add its stock aliquot, then the buffers.', s: label() }],
     [{ v: '3. Work downwards, each tube drawing its aliquot from the tube above it.', s: label() }],
     [{ v: '4. "Left for wells" is what remains once the tube below has taken its aliquot.', s: label() }],
@@ -213,7 +248,7 @@ function sheetFromRows(rows: Row[], colWidths: number[]): XLSX.WorkSheet {
 
 export function exportDilutionsXlsx(project: Project, result: DilutionResult): void {
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, sheetFromRows(dilutionBenchSheetRows(project, result), [30, 16, 20, 20, 20, 20, 16]), 'Dilutions');
+  XLSX.utils.book_append_sheet(wb, sheetFromRows(dilutionBenchSheetRows(project, result), [34, 18, 20, 20, 20, 30, 16]), 'Dilutions');
   const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   triggerDownload(new Blob([out], { type: 'application/octet-stream' }), `${slug(project.name)}-dilutions.xlsx`);
 }

@@ -127,8 +127,26 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
   until the addition clears 0.5 µl, and the app says which additive forced it, what the
   volume had been, and that a weaker stock would need less.
 
+## Substrate (2026-09-20)
+
+- **The substrate is premixed with the other diluents**, not off to one side, because it has
+  to be made up in the same assay buffer as the well — so it inherits that buffer's DMSO and
+  BSA automatically when placement says the well buffer carries them.
+- **Two dilution conventions, both real.** BRET/NanoBiT quote the *final in-well* dilution
+  (furimazine 1:1000) and spike the solution to land there; HiBiT kits quote the *prepared*
+  recipe (substrate 1:100, LgBiT 1:200) and add it as is. The basis is a setting and both
+  columns are always shown, so a number is never ambiguous.
+- **Whether the spike is 1× before or after the compounds is a setting**, because people
+  differ: 10 µl into 80 + 10 + 10 is 10× referenced after, 9× referenced before. A kit recipe
+  is neither, and the app reports no in-well dilution for it rather than inventing one.
+- **The well buffer no longer counts the substrate's share.** Plain buffer per well is
+  `inWell − substrateVolume`, so the two premixes do not overlap.
+- Assay defaults are **offered, never imposed**: a button loads the usual recipe for the
+  selected assay instead of overwriting whatever is there when the assay type changes.
+
 ## Open / deferred
 
 - Deeper UI polish (keyboard navigation, sidebar, density) waits until modules 2 and 3 exist,
   so navigation is designed once rather than three times.
 - Module 4 (plate-reader output reshaper) stays a stub with a clean seam until 1–3 are done.
+- DERET: the furimazine solution the compounds are diluted in is still not calculated.

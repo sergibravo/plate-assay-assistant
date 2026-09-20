@@ -18,6 +18,7 @@
  * `dilutionFactor ×` that, because adding it to the well dilutes it by that factor.
  */
 
+import { computeSubstrate, defaultSubstrate, type SubstrateResult, type SubstrateSettings } from './substrate';
 import type { Vehicle, Warning } from './types';
 import { ceilingTo1, logMToUM, MIN_PIPETTE_UL, round } from './units';
 
@@ -109,7 +110,7 @@ export interface BsaSettings {
   placement: Placement;
 }
 
-export type DiluentId = 'normal' | 'dmso' | 'well';
+export type DiluentId = 'normal' | 'dmso' | 'well' | 'substrate';
 
 /** How to premix one diluent, from the bottom of the tube upwards. */
 export interface DiluentRecipe {
@@ -123,6 +124,8 @@ export interface DiluentRecipe {
   dmso_ul: number;
   /** BSA stock to add (0 when BSA is off). */
   bsaStock_ul: number;
+  /** Named ingredients other than DMSO and BSA, e.g. the substrate components. */
+  components: { name: string; volume_ul: number }[];
   /** The rest: plain assay buffer / furimazine solution. */
   base_ul: number;
   /**
@@ -177,6 +180,8 @@ export interface DilutionExperiment {
    * Someone topping up a stock bottle, or wanting a round 5 ml, sets it here.
    */
   premixOverrides: Record<DiluentId, number | null>;
+  /** The detection reagent, prepared in the same assay buffer as the well. */
+  substrate: SubstrateSettings;
   blocks: CompoundBlock[];
   bsa: BsaSettings;
   /** Buffer recipes etc., carried onto the bench sheet so it is self-contained. */
@@ -246,6 +251,7 @@ export interface DilutionResult {
   totalDmsoBuffer_ul: number;
   /** How to make each diluent up, including BSA and DMSO. */
   recipes: DiluentRecipe[];
+  substrate: SubstrateResult;
   warnings: Warning[];
 }
 
@@ -459,6 +465,7 @@ function recipe(
   bsaFrac: number,
   bsaStockPct: number,
   override: number | null,
+  components: { name: string; volume_ul: number }[] = [],
 ): DiluentRecipe {
   const scaledUpFor: string[] = [];
 
@@ -478,6 +485,7 @@ function recipe(
 
   const dmso_ul = prepare * dmsoFrac;
   const bsaStock_ul = bsaStockPct > 0 ? (prepare * bsaFrac * 100) / bsaStockPct : 0;
+  const componentVolume = components.reduce((a, c) => a + c.volume_ul, 0);
   return {
     id,
     name,
@@ -487,16 +495,23 @@ function recipe(
     overridden,
     dmso_ul,
     bsaStock_ul,
-    base_ul: Math.max(0, prepare - dmso_ul - bsaStock_ul),
+    components,
+    base_ul: Math.max(0, prepare - dmso_ul - bsaStock_ul - componentVolume),
     scaledUpFor: overridden ? [] : scaledUpFor,
   };
 }
 
-/** Buffer that goes into the wells before the compounds do. */
+/**
+ * Plain assay buffer that goes into the wells before the compounds do. The substrate
+ * occupies part of that in-well volume and is premixed separately, so it is taken out here.
+ */
 function wellBufferVolume(exp: DilutionExperiment): number {
   const { compound_ul, inWell_ul } = exp.addition;
   if (compound_ul <= 0 || inWell_ul <= 0) return 0;
-  const perStep = inWell_ul / compound_ul;
+  const bufferPerWell = exp.substrate?.enabled
+    ? Math.max(0, inWell_ul - exp.substrate.volumePerWell_ul)
+    : inWell_ul;
+  const perStep = bufferPerWell / compound_ul;
   return exp.blocks.reduce((total, b) => {
     const rows = b.logM.filter((v) => v !== null && Number.isFinite(v)).length;
     return total + rows * b.volForWells_ul * b.margin * perStep;
@@ -574,11 +589,43 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
   const wellBsa = exp.bsa.placement === 'all-buffers' ? bsaFrac : 0;
   const wellDmso = exp.dmsoPlacement === 'all-buffers' ? target : 0;
 
-  const ov = exp.premixOverrides ?? { normal: null, dmso: null, well: null };
+  const ov = exp.premixOverrides ?? { normal: null, dmso: null, well: null, substrate: null };
+  const substrateSettings = exp.substrate ?? defaultSubstrate(exp.assayType);
+
+  // Sized first, because the component stock volumes depend on the volume prepared.
+  const substrateSizing = recipe(
+    'substrate',
+    'Substrate solution',
+    substrateSettings.enabled ? computeSubstrate(substrateSettings, { inWell_ul: exp.addition.inWell_ul, compound_ul: exp.addition.compound_ul, prepare_ul: 0 }).required_ul : 0,
+    wellDmso,
+    wellBsa,
+    bsaStockPct,
+    ov.substrate ?? null,
+  );
+  const substrate = computeSubstrate(substrateSettings, {
+    inWell_ul: exp.addition.inWell_ul,
+    compound_ul: exp.addition.compound_ul,
+    prepare_ul: substrateSizing.prepare_ul,
+  });
+
   const recipes = [
     recipe('normal', assay.normalBufferName, totalNormalBuffer_ul, 0, bsaFrac, bsaStockPct, ov.normal),
     recipe('dmso', assay.dmsoBufferName, totalDmsoBuffer_ul, target, bsaFrac, bsaStockPct, ov.dmso),
     recipe('well', 'Well buffer (added before compounds)', wellBufferVolume(exp), wellDmso, wellBsa, bsaStockPct, ov.well),
+    ...(substrateSettings.enabled
+      ? [
+          recipe(
+            'substrate',
+            `Substrate solution (in the same ${assay.diluent})`,
+            substrate.required_ul,
+            wellDmso,
+            wellBsa,
+            bsaStockPct,
+            ov.substrate ?? null,
+            substrate.components.map((c) => ({ name: `${c.name} (1:${round(c.preparedDilution, 2)})`, volume_ul: c.stock_ul })),
+          ),
+        ]
+      : []),
   ];
 
   for (const r of recipes) {
@@ -624,6 +671,7 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
     totalNormalBuffer_ul,
     totalDmsoBuffer_ul,
     recipes,
-    warnings: [...warnings, ...blocks.flatMap((b) => b.warnings)],
+    substrate,
+    warnings: [...warnings, ...substrate.warnings, ...blocks.flatMap((b) => b.warnings)],
   };
 }

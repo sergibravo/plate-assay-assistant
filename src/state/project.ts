@@ -4,7 +4,7 @@
  * localStorage autosave for convenience. No server, no database.
  */
 
-import { additionFactor, type CompoundBlock, type DilutionExperiment } from '../calc/dilutions';
+import type { CompoundBlock, DilutionExperiment } from '../calc/dilutions';
 import { defaultSubstrate } from '../calc/substrate';
 import type {
   Compound,
@@ -171,7 +171,7 @@ export function emptyDilutions(): DilutionExperiment {
   return {
     assayType: 'NanoBiT/BRET',
     dmsoOverride: null,
-    addition: { compound_ul: 10, inWell_ul: 90 },
+    addition: { compound_ul: 10, assayBuffer_ul: 80 },
     dmsoPlacement: 'compound-only',
     premixOverrides: { normal: null, dmso: null, well: null, substrate: null },
     substrate: defaultSubstrate('NanoBiT/BRET'),
@@ -259,13 +259,28 @@ export function migrate(raw: any): Project {
   // factor; it is now one setting, expressed as the volumes actually pipetted.
   if (p.dilutions.inWellFactor !== undefined && !hadAddition) {
     const f = Number(p.dilutions.inWellFactor) || 2;
-    p.dilutions.addition = { compound_ul: 10, inWell_ul: 10 * (f - 1) };
+    p.dilutions.addition = { compound_ul: 10, assayBuffer_ul: 10 * (f - 1) };
     delete p.dilutions.inWellFactor;
+  }
+  // The well used to be "what is already in it" (assay buffer plus the substrate); it is now
+  // the plain assay buffer alone, with the substrate carrying its own volume.
+  if (p.dilutions.addition?.inWell_ul !== undefined) {
+    const substrateVol = p.dilutions.substrate?.enabled ? Number(p.dilutions.substrate.volumePerWell_ul) || 0 : 0;
+    p.dilutions.addition = {
+      compound_ul: p.dilutions.addition.compound_ul,
+      assayBuffer_ul: Math.max(0, p.dilutions.addition.inWell_ul - substrateVol),
+    };
+  }
+  if (p.dilutions.substrate) {
+    // Dilutions are quoted in the well now; a kit-recipe reference has no equivalent.
+    if (p.dilutions.substrate.basis === 'prepared') delete p.dilutions.substrate.basis;
+    if (p.dilutions.substrate.reference === 'as-prepared') p.dilutions.substrate.reference = 'after-compounds';
+    delete p.dilutions.substrate.basis;
   }
   if (p.dilutions.bsa.basis !== undefined) {
     // 'in-well' meant the buffer was premixed that much stronger; carry the number over.
     if (p.dilutions.bsa.basis === 'in-well') {
-      p.dilutions.bsa.targetPct *= additionFactor(p.dilutions.addition);
+      p.dilutions.bsa.targetPct *= 2;
     }
     p.dilutions.bsa.placement = 'compound-only';
     delete p.dilutions.bsa.basis;

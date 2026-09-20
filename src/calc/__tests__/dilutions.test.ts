@@ -26,7 +26,7 @@ const block = (over: Partial<CompoundBlock> = {}): CompoundBlock => ({
 const NO_BSA = { enabled: false, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' as const };
 
 /** 100 µl into 100 µl — the sheet's 50 + 50 addition, i.e. 2×. */
-const ADDITION_2X = { compound_ul: 100, inWell_ul: 100 };
+const ADDITION_2X = { compound_ul: 100, assayBuffer_ul: 100 };
 
 const experiment = (blocks: CompoundBlock[], over: Partial<DilutionExperiment> = {}): DilutionExperiment => ({
   assayType: 'NanoBiT/BRET',
@@ -196,7 +196,7 @@ describe('matching rules', () => {
 
   it('in-well DMSO follows the addition: 10 µl into 90 µl is 10×', () => {
     const nebi = block({ name: 'Nebi', vehicle: 'DMSO', logM: [-5] });
-    const r = computeDilutions(experiment([nebi], { addition: { compound_ul: 10, inWell_ul: 90 } }));
+    const r = computeDilutions(experiment([nebi], { addition: { compound_ul: 10, assayBuffer_ul: 90 } }));
     expect(r.additionFactor).toBeCloseTo(10, 12);
     expect(r.inWellDmso).toBeCloseTo(r.target / 10, 12);
   });
@@ -315,7 +315,7 @@ describe('BSA in the diluents', () => {
     const r = computeDilutions(
       experiment([block({ name: 'Iso', logM: [-5] })], {
         bsa: { ...bsa, placement: 'compound-only' },
-        addition: { compound_ul: 10, inWell_ul: 90 },
+        addition: { compound_ul: 10, assayBuffer_ul: 90 },
       }),
     );
     expect(r.bsaBufferFraction).toBeCloseTo(0.0001, 12);
@@ -463,7 +463,7 @@ describe('where the DMSO sits', () => {
 
   it('compound only: the well buffer is DMSO-free and the well lands a factor lower', () => {
     const r = computeDilutions(
-      experiment([nebi], { addition: { compound_ul: 10, inWell_ul: 90 }, dmsoPlacement: 'compound-only' }),
+      experiment([nebi], { addition: { compound_ul: 10, assayBuffer_ul: 90 }, dmsoPlacement: 'compound-only' }),
     );
     expect(r.inWellDmso).toBeCloseTo(r.target / 10, 12);
     expect(r.recipes[2].dmso_ul).toBe(0);
@@ -471,7 +471,7 @@ describe('where the DMSO sits', () => {
 
   it('every buffer: the well buffer carries the same DMSO, so nothing changes on addition', () => {
     const r = computeDilutions(
-      experiment([nebi], { addition: { compound_ul: 10, inWell_ul: 90 }, dmsoPlacement: 'all-buffers' }),
+      experiment([nebi], { addition: { compound_ul: 10, assayBuffer_ul: 90 }, dmsoPlacement: 'all-buffers' }),
     );
     expect(r.inWellDmso).toBeCloseTo(r.target, 12);
     const wellBuffer = r.recipes[2];
@@ -481,7 +481,7 @@ describe('where the DMSO sits', () => {
   it('the well buffer is sized from the addition: 90 µl per 10 µl of compound', () => {
     const r = computeDilutions(
       experiment([block({ name: 'Iso', volForWells_ul: 200, logM: [-5, -6] })], {
-        addition: { compound_ul: 10, inWell_ul: 90 },
+        addition: { compound_ul: 10, assayBuffer_ul: 90 },
       }),
     );
     // two rows × 200 µl × margin 1 × (90/10)

@@ -71,20 +71,30 @@ export const ASSAY_PROFILES: Record<AssayType, AssayProfile> = {
 };
 
 /**
- * How the compound solution reaches the well: `compound_ul` of tube contents into
- * `inWell_ul` already sitting there. 10 µl into 90 µl is a 10× dilution.
+ * The well described by volumes rather than by an order of pipetting: plain assay buffer,
+ * the substrate solution (its volume lives with the substrate settings), and the compound.
+ * Any of them may be zero — an assay with nothing in the well but 50 µl of compound is
+ * perfectly legal.
  *
- * This single addition drives everything: each tube is prepared at `factor ×` the final
- * in-well concentration, and — unless the well buffer carries DMSO itself — the DMSO the
- * cells see is the tube's divided by the same factor.
+ * The compound is diluted by `total / compound`, and that single factor drives everything:
+ * each tube is prepared at `factor ×` the final in-well concentration, and — unless the well
+ * buffer carries DMSO itself — the DMSO the cells see is the tube's divided by it.
  */
 export interface AdditionSettings {
   compound_ul: number;
-  inWell_ul: number;
+  /** Plain assay buffer per well, before anything is added. May be 0. */
+  assayBuffer_ul: number;
 }
 
-export function additionFactor(a: AdditionSettings): number {
-  return a.compound_ul > 0 ? (a.compound_ul + a.inWell_ul) / a.compound_ul : 1;
+/** Everything that ends up in the well. */
+export function wellTotal(exp: DilutionExperiment): number {
+  const substrate = exp.substrate?.enabled ? exp.substrate.volumePerWell_ul : 0;
+  return exp.addition.assayBuffer_ul + substrate + exp.addition.compound_ul;
+}
+
+export function additionFactor(exp: DilutionExperiment): number {
+  const c = exp.addition.compound_ul;
+  return c > 0 ? wellTotal(exp) / c : 1;
 }
 
 /**
@@ -267,7 +277,7 @@ function usedRows(block: CompoundBlock): number[] {
  */
 /** The addition factor this block is prepared against. */
 export function blockFactor(exp: DilutionExperiment, block: CompoundBlock): number {
-  return block.dilutionFactorOverride ?? additionFactor(exp.addition);
+  return block.dilutionFactorOverride ?? additionFactor(exp);
 }
 
 function geometry(block: CompoundBlock, factor: number) {
@@ -506,12 +516,9 @@ function recipe(
  * occupies part of that in-well volume and is premixed separately, so it is taken out here.
  */
 function wellBufferVolume(exp: DilutionExperiment): number {
-  const { compound_ul, inWell_ul } = exp.addition;
-  if (compound_ul <= 0 || inWell_ul <= 0) return 0;
-  const bufferPerWell = exp.substrate?.enabled
-    ? Math.max(0, inWell_ul - exp.substrate.volumePerWell_ul)
-    : inWell_ul;
-  const perStep = bufferPerWell / compound_ul;
+  const { compound_ul, assayBuffer_ul } = exp.addition;
+  if (compound_ul <= 0 || assayBuffer_ul <= 0) return 0;
+  const perStep = assayBuffer_ul / compound_ul;
   return exp.blocks.reduce((total, b) => {
     const rows = b.logM.filter((v) => v !== null && Number.isFinite(v)).length;
     return total + rows * b.volForWells_ul * b.margin * perStep;
@@ -520,7 +527,7 @@ function wellBufferVolume(exp: DilutionExperiment): number {
 
 export function computeDilutions(exp: DilutionExperiment): DilutionResult {
   const assay = ASSAY_PROFILES[exp.assayType];
-  const factor = additionFactor(exp.addition);
+  const factor = additionFactor(exp);
   const computedTarget = computeDmsoTarget(exp);
   const target = exp.dmsoOverride ?? computedTarget;
   const bsaFrac = bsaBufferFraction(exp);
@@ -565,8 +572,14 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
       message: `A dilution on addition of ${b.dilutionFactorOverride}× is impossible — it must be greater than 0. Clear the field to use the experiment's addition.`,
     });
   }
-  if (exp.addition.compound_ul <= 0) {
-    warnings.push({ level: 'error', code: 'no-addition', scope: 'Addition', message: 'The volume of compound added to each well must be greater than 0.' });
+  const hasCompounds = exp.blocks.some((b) => usedRows(b).length > 0);
+  if (hasCompounds && exp.addition.compound_ul <= 0) {
+    warnings.push({
+      level: 'error',
+      code: 'no-addition',
+      scope: 'Addition',
+      message: 'Compounds are listed, so the volume of compound added to each well must be greater than 0.',
+    });
   }
 
   const totalNormalBuffer_ul = blocks.reduce((a, b) => a + b.totalNormalBuffer_ul, 0);
@@ -596,14 +609,16 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
   const substrateSizing = recipe(
     'substrate',
     'Substrate solution',
-    substrateSettings.enabled ? computeSubstrate(substrateSettings, { inWell_ul: exp.addition.inWell_ul, compound_ul: exp.addition.compound_ul, prepare_ul: 0 }).required_ul : 0,
+    substrateSettings.enabled
+      ? computeSubstrate(substrateSettings, { assayBuffer_ul: exp.addition.assayBuffer_ul, compound_ul: exp.addition.compound_ul, prepare_ul: 0 }).required_ul
+      : 0,
     wellDmso,
     wellBsa,
     bsaStockPct,
     ov.substrate ?? null,
   );
   const substrate = computeSubstrate(substrateSettings, {
-    inWell_ul: exp.addition.inWell_ul,
+    assayBuffer_ul: exp.addition.assayBuffer_ul,
     compound_ul: exp.addition.compound_ul,
     prepare_ul: substrateSizing.prepare_ul,
   });

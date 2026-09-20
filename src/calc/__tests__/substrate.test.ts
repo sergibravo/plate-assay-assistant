@@ -3,7 +3,7 @@ import { computeSubstrate, defaultSubstrate, substrateFold, type SubstrateSettin
 import { computeDilutions, type CompoundBlock, type DilutionExperiment } from '../dilutions';
 
 /** The worked BRET setup: 80 µl assay buffer + 10 µl substrate + 10 µl compound. */
-const WELL = { inWell_ul: 90, compound_ul: 10, prepare_ul: 1000 };
+const WELL = { assayBuffer_ul: 80, compound_ul: 10, prepare_ul: 1000 };
 
 const bret = (over: Partial<SubstrateSettings> = {}): SubstrateSettings => ({
   ...defaultSubstrate('NanoBiT/BRET'),
@@ -25,12 +25,6 @@ describe('BRET / NanoBiT substrate', () => {
     expect(r.components[0].preparedDilution).toBeCloseTo(1000 / 9, 12);
   });
 
-  it('the prepared basis works the other way round: 1:100 prepared → 1:1000 in the well', () => {
-    const r = computeSubstrate(bret({ basis: 'prepared', components: [{ id: 'c', name: 'furimazine', dilution: 100, notes: '' }] }), WELL);
-    expect(r.components[0].preparedDilution).toBe(100);
-    expect(r.components[0].inWellDilution).toBeCloseTo(1000, 12);
-  });
-
   it('volume is per-well × wells × margin, and the stock follows the prepared dilution', () => {
     const r = computeSubstrate(bret({ wells: 96, margin: 1.2 }), WELL);
     expect(r.required_ul).toBeCloseTo(10 * 96 * 1.2, 9); // 1152 µl
@@ -42,13 +36,14 @@ describe('BRET / NanoBiT substrate', () => {
     expect(computeSubstrate(bret(), WELL).assayBufferPerWell_ul).toBe(80);
   });
 
-  it('catches a substrate that does not fit in the well', () => {
-    const r = computeSubstrate(bret({ volumePerWell_ul: 200 }), WELL);
-    expect(r.warnings.some((w) => w.code === 'substrate-exceeds-well')).toBe(true);
+  it('an empty well is legal: 50 µl of substrate into nothing is 1× on its own', () => {
+    const r = computeSubstrate(bret({ volumePerWell_ul: 50 }), { assayBuffer_ul: 0, compound_ul: 0, prepare_ul: 1000 });
+    expect(r.foldFactor).toBe(1);
+    expect(r.components[0].preparedDilution).toBeCloseTo(1000, 12);
   });
 
   it('catches a "dilution" that is not one', () => {
-    const r = computeSubstrate(bret({ basis: 'prepared', components: [{ id: 'c', name: 'x', dilution: 1, notes: '' }] }), WELL);
+    const r = computeSubstrate(bret({ components: [{ id: 'c', name: 'x', dilution: 1, notes: '' }] }), WELL);
     expect(r.warnings.some((w) => w.code === 'substrate-dilution')).toBe(true);
   });
 
@@ -60,17 +55,19 @@ describe('BRET / NanoBiT substrate', () => {
 
 describe('HiBiT substrate', () => {
   const hibit = defaultSubstrate('HiBiT');
+  /** 50 µl of reagent added to 50 µl of buffer — the kit's equal-volume addition. */
+  const hibitWell = { assayBuffer_ul: 50, compound_ul: 0, prepare_ul: 5000 };
 
-  it('defaults to 50 µl/well of the kit recipe: substrate 1:100, LgBiT 1:200', () => {
+  it('defaults to 50 µl/well, quoted in the well: substrate 1:200, LgBiT 1:400', () => {
     expect(hibit.volumePerWell_ul).toBe(50);
-    expect(hibit.components.map((c) => c.dilution)).toEqual([100, 200]);
+    expect(hibit.components.map((c) => c.dilution)).toEqual([200, 400]);
   });
 
-  it('is used as prepared, so no in-well dilution is claimed', () => {
-    const r = computeSubstrate(hibit, { inWell_ul: 50, compound_ul: 0, prepare_ul: 5000 });
-    expect(substrateFold(hibit, { inWell_ul: 50, compound_ul: 0, prepare_ul: 0 })).toBeNull();
-    expect(r.foldFactor).toBeNull();
-    expect(r.components.every((c) => c.inWellDilution === null)).toBe(true);
+  it('an equal-volume addition is 2×, so the reagent is the kit\'s 1:100 and 1:200', () => {
+    expect(substrateFold(hibit, hibitWell)).toBeCloseTo(2, 12);
+    const r = computeSubstrate(hibit, hibitWell);
+    expect(r.components[0].preparedDilution).toBeCloseTo(100, 12);
+    expect(r.components[1].preparedDilution).toBeCloseTo(200, 12);
     expect(r.components[0].stock_ul).toBeCloseTo(50, 12); // 5000 / 100
     expect(r.components[1].stock_ul).toBeCloseTo(25, 12); // 5000 / 200
   });
@@ -90,7 +87,7 @@ describe('substrate inside the experiment', () => {
   const exp = (over: Partial<DilutionExperiment> = {}): DilutionExperiment => ({
     assayType: 'NanoBiT/BRET',
     dmsoOverride: null,
-    addition: { compound_ul: 10, inWell_ul: 90 },
+    addition: { compound_ul: 10, assayBuffer_ul: 80 },
     dmsoPlacement: 'compound-only',
     premixOverrides: { normal: null, dmso: null, well: null, substrate: null },
     substrate: defaultSubstrate('NanoBiT/BRET'),
@@ -109,12 +106,14 @@ describe('substrate inside the experiment', () => {
     expect(sub.base_ul).toBeCloseTo(sub.prepare_ul - sub.components[0].volume_ul, 9);
   });
 
-  it('takes the substrate volume out of the plain well buffer', () => {
+  it('the plain well buffer is its own volume, and the substrate adds to the total', () => {
     const withSub = computeDilutions(exp());
     const without = computeDilutions(exp({ substrate: { ...defaultSubstrate('NanoBiT/BRET'), enabled: false } }));
     const wellOf = (x: typeof withSub) => x.recipes.find((r) => r.id === 'well')!.required_ul;
-    // 80 µl of buffer per well instead of 90
-    expect(wellOf(withSub)).toBeCloseTo((wellOf(without) * 80) / 90, 9);
+    // the buffer per well (80 µl) does not change; only the total, and so the fold, does
+    expect(wellOf(withSub)).toBeCloseTo(wellOf(without), 9);
+    expect(withSub.additionFactor).toBeCloseTo(10, 12); // (80 + 10 + 10) / 10
+    expect(without.additionFactor).toBeCloseTo(9, 12); //  (80 + 10) / 10
   });
 
   it('prepares the substrate in the same buffer as the well: BSA and DMSO follow placement', () => {

@@ -132,15 +132,19 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
 - **The substrate is premixed with the other diluents**, not off to one side, because it has
   to be made up in the same assay buffer as the well — so it inherits that buffer's DMSO and
   BSA automatically when placement says the well buffer carries them.
-- **Two dilution conventions, both real.** BRET/NanoBiT quote the *final in-well* dilution
-  (furimazine 1:1000) and spike the solution to land there; HiBiT kits quote the *prepared*
-  recipe (substrate 1:100, LgBiT 1:200) and add it as is. The basis is a setting and both
-  columns are always shown, so a number is never ambiguous.
+- **One dilution convention: the final concentration in the well.** A "prepared vs in-well"
+  basis toggle and an "as prepared (kit recipe)" reference were both tried and removed — they
+  were two ways of saying the same thing and neither read clearly. Everything is quoted where
+  it matters biologically, and the app works back to the tube. Kit recipes are entered as
+  their in-well equivalent (HiBiT substrate 1:200, LgBiT 1:400 for an equal-volume addition).
 - **Whether the spike is 1× before or after the compounds is a setting**, because people
-  differ: 10 µl into 80 + 10 + 10 is 10× referenced after, 9× referenced before. A kit recipe
-  is neither, and the app reports no in-well dilution for it rather than inventing one.
-- **The well buffer no longer counts the substrate's share.** Plain buffer per well is
-  `inWell − substrateVolume`, so the two premixes do not overlap.
+  differ: 10 µl into 80 + 10 + 10 is 10× referenced after, 9× referenced before.
+- **The well is volumes, not an ordering.** Plain assay buffer, substrate and compound are
+  three independent volumes and any may be zero, so "nothing in the well, add 50 µl at 1×" is
+  expressible. The previous model asked for "what is already in the well", which forced an
+  order of pipetting and rejected an empty well.
+- **Defaults are per assay, not per current selection.** One button per assay, so the HiBiT
+  recipe can be loaded without first switching the whole experiment over.
 - Assay defaults are **offered, never imposed**: a button loads the usual recipe for the
   selected assay instead of overwriting whatever is there when the assay type changes.
 

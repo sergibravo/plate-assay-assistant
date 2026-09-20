@@ -151,20 +151,27 @@ The well is assay buffer + substrate + compound. The substrate solution is prepa
 same assay buffer as the well, so it is premixed alongside the other diluents and carries
 their DMSO and BSA when placement says the well buffer does.
 
+The well is described by **volumes, not by an order of pipetting**: plain assay buffer, the
+substrate solution, and the compound. Any of them may be zero — 50 µl of compound into an
+empty well is a legal 1× addition — and the totals fall out of the sum:
+
 | Quantity | Formula |
 | --- | --- |
-| Fold in the well | `after-compounds`: `(inWell + compound) / substrateVol` · `before-compounds`: `inWell / substrateVol` · `as-prepared`: none |
-| Prepared dilution | basis `in-well`: `quoted / fold` · basis `prepared`: as quoted |
-| In-well dilution | `prepared × fold`, or `null` when not fold-corrected |
+| Well volume | `assayBuffer + substrate + compound` |
+| Compound diluted by | `well volume / compound` |
+| Substrate fold | `after-compounds`: `well volume / substrate` · `before-compounds`: `(assayBuffer + substrate) / substrate` |
+| Prepared dilution | `quoted in-well dilution / fold` |
 | Volume to prepare | `volumePerWell × wells × margin`, then the usual premix rounding |
 | Stock per component | `prepared volume / prepared dilution` |
-| Plain well buffer | `inWell − substrateVol` per well, so the substrate's share is not counted twice |
+
+Dilutions are **always quoted as the final concentration in the well** — the number that
+means something biologically — and the app works back to the tube.
 
 Worked case: 80 µl assay buffer + 10 µl substrate + 10 µl compound, furimazine 1:1000 in the
-well → fold 10×, prepared 1:100, and 12 µl of stock in 1200 µl of solution. Referenced
-*before* the compounds instead, fold is 9× and the solution is 1:111.1. For HiBiT the quoted
-1:100 and 1:200 are the prepared recipe and no in-well figure is claimed, because adding it
-as a kit reagent is not fold-corrected.
+well → fold 10×, prepared 1:100, 12 µl of stock in 1200 µl of solution. Referenced *before*
+the compounds instead, fold is 9× and the solution is 1:111.1. The HiBiT defaults are the kit
+recipe converted to in-well figures for an equal-volume addition (substrate 1:200, LgBiT
+1:400, which at the kit's 2× come back to 1:100 and 1:200 in the reagent).
 
 ### BSA carrier (not in the sheet)
 

@@ -110,6 +110,11 @@ main { padding: 14px 16px 40px; }
 }
 
 /* The volumes the user actually pipettes: bold, boxed, still on the same columns. */
+.stacked-field { margin-bottom: 8px; }
+.stacked-field > label { display: block; color: #333; margin-bottom: 4px; }
+.stacked-field .segmented { max-width: 100%; flex-wrap: wrap; }
+.segmented button { white-space: nowrap; }
+
 .pipette-box {
   border: 1px solid var(--calc-border); background: #f2f7ff; border-radius: 6px;
   padding: 8px 10px; margin: 0 -11px 8px;

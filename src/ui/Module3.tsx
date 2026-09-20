@@ -35,6 +35,8 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
     update({ ...project, dilutions: { ...exp, ...patch } });
 
   const sub = exp.substrate;
+  const wellVolume =
+    exp.addition.assayBuffer_ul + (sub.enabled ? sub.volumePerWell_ul : 0) + exp.addition.compound_ul;
   const setSub = (patch: Partial<typeof sub>) => setExp({ substrate: { ...sub, ...patch } });
   const setComponent = (id: string, patch: Partial<(typeof sub.components)[number]>) =>
     setSub({ components: sub.components.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
@@ -88,22 +90,31 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
         <div className="grid-2">
           <div>
             <NumField
+              label="Assay buffer in the well"
+              unit="µl per well"
+              value={exp.addition.assayBuffer_ul}
+              onChange={(v) => setExp({ addition: { ...exp.addition, assayBuffer_ul: v } })}
+            />
+            {sub.enabled && (
+              <div className="field">
+                <label>Substrate added</label>
+                <output className="calc">{fmtVol(sub.volumePerWell_ul, 1)}</output>
+                <span className="unit">µl per well</span>
+              </div>
+            )}
+            <NumField
               label="Compound solution added"
               unit="µl per well"
               value={exp.addition.compound_ul}
               onChange={(v) => setExp({ addition: { ...exp.addition, compound_ul: v } })}
             />
-            <NumField
-              label="Already in the well"
-              unit="µl per well"
-              value={exp.addition.inWell_ul}
-              onChange={(v) => setExp({ addition: { ...exp.addition, inWell_ul: v } })}
-            />
-            <CalcField label="= dilution on addition" unit="×" value={result.additionFactor} decimals={3} strong />
+            <CalcField label="= well volume" unit="µl" value={wellVolume} decimals={1} />
+            <CalcField label="= compound diluted by" unit="×" value={result.additionFactor} decimals={3} strong />
             <p className="hint">
-              This one addition drives everything: each tube is prepared at{' '}
-              {round(result.additionFactor, 3)}× the concentration you type, so the logM in the
-              tables below is what the <strong>cells</strong> finally see.
+              Any of these may be 0 — 50 µl of compound into an empty well is a 1× addition.
+              Each tube is prepared at {round(result.additionFactor, 3)}× the concentration you
+              type, so the logM in the tables below is what the <strong>cells</strong> finally see.
+              {sub.enabled ? ' The substrate volume is set in the Substrate panel.' : ''}
             </p>
           </div>
           <div>
@@ -117,9 +128,9 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
               onChange={(v) => setExp({ dmsoPlacement: v })}
             />
             <p className="hint" style={{ marginTop: 8 }}>
-              <strong>Only in the compound:</strong> the {exp.addition.inWell_ul} µl already in the
-              well is DMSO-free, and all the DMSO arrives with the {exp.addition.compound_ul} µl
-              addition — matched across compounds, so they all spike identically.
+              <strong>Only in the compound:</strong> everything else in the well is DMSO-free, and
+              all the DMSO arrives with the {exp.addition.compound_ul} µl addition — matched across
+              compounds, so they all spike identically.
               <br />
               <strong>In every buffer:</strong> the well buffer is premixed at the same DMSO as the
               tubes, so the concentration never changes — steadier for the cells, but the final
@@ -200,13 +211,17 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
         title="Substrate"
         actions={
           <div className="no-print" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <button
-              className="btn small"
-              title={`Replace these settings with the usual ${exp.assayType} recipe`}
-              onClick={() => setExp({ substrate: defaultSubstrate(exp.assayType) })}
-            >
-              Load {exp.assayType} defaults
-            </button>
+            <span style={{ fontSize: 11.5, color: '#667085' }}>load defaults:</span>
+            {(['NanoBiT/BRET', 'HiBiT'] as const).map((a) => (
+              <button
+                key={a}
+                className="btn small"
+                title={`Replace these settings with the usual ${a} recipe`}
+                onClick={() => setExp({ substrate: defaultSubstrate(a) })}
+              >
+                {a}
+              </button>
+            ))}
             <div className="field" style={{ margin: 0, gridTemplateColumns: 'auto auto' }}>
               <label style={{ fontSize: 11.5, color: '#667085' }}>prepare substrate</label>
               <input
@@ -235,45 +250,24 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                 </p>
               </div>
               <div>
-                <div className="field">
-                  <label>Dilutions below are</label>
-                  <div style={{ gridColumn: '2 / span 2' }}>
-                    <Segmented
-                      value={sub.basis}
-                      options={[
-                        { value: 'in-well' as const, label: 'final in the well' },
-                        { value: 'prepared' as const, label: 'in the solution' },
-                      ]}
-                      onChange={(v) => setSub({ basis: v })}
-                    />
-                  </div>
+                <div className="stacked-field">
+                  <label>Dilutions below hold</label>
+                  <Segmented
+                    value={sub.reference}
+                    options={[
+                      { value: 'after-compounds' as SubstrateReference, label: 'once compounds are in' },
+                      { value: 'before-compounds' as SubstrateReference, label: 'before compounds' },
+                    ]}
+                    onChange={(v) => setSub({ reference: v })}
+                  />
                 </div>
-                <div className="field">
-                  <label>Spiked to be 1×</label>
-                  <div style={{ gridColumn: '2 / span 2' }}>
-                    <Segmented
-                      value={sub.reference}
-                      options={[
-                        { value: 'after-compounds' as SubstrateReference, label: 'after compounds' },
-                        { value: 'before-compounds' as SubstrateReference, label: 'before compounds' },
-                        { value: 'as-prepared' as SubstrateReference, label: 'kit recipe' },
-                      ]}
-                      onChange={(v) => setSub({ reference: v })}
-                    />
-                  </div>
-                </div>
-                <CalcField
-                  label="= diluted in the well by"
-                  unit="×"
-                  value={result.substrate.foldFactor}
-                  decimals={3}
-                />
+                <CalcField label="= diluted in the well by" unit="×" value={result.substrate.foldFactor} decimals={3} strong />
                 <p className="hint">
-                  {result.substrate.foldFactor === null
-                    ? 'Kit recipe: the solution is added as prepared, so no in-well dilution is claimed for it.'
-                    : sub.reference === 'after-compounds'
-                      ? `1× once everything is in the well: ${fmtVol(exp.addition.inWell_ul + exp.addition.compound_ul, 1)} µl ÷ ${fmtVol(sub.volumePerWell_ul, 1)} µl.`
-                      : `1× in the well before compounds: ${fmtVol(exp.addition.inWell_ul, 1)} µl ÷ ${fmtVol(sub.volumePerWell_ul, 1)} µl.`}
+                  {sub.reference === 'after-compounds'
+                    ? `${fmtVol(wellVolume, 1)} µl in the well ÷ ${fmtVol(sub.volumePerWell_ul, 1)} µl of substrate.`
+                    : `${fmtVol(wellVolume - exp.addition.compound_ul, 1)} µl before the compounds ÷ ${fmtVol(sub.volumePerWell_ul, 1)} µl of substrate.`}{' '}
+                  Everything below is quoted as the final concentration in the well; the app works
+                  back to what goes in the tube.
                 </p>
               </div>
             </div>
@@ -282,9 +276,8 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
               <thead>
                 <tr>
                   <th>Component</th>
-                  <th className="num" style={{ width: 120 }}>1:N {sub.basis === 'in-well' ? 'in the well' : 'in the solution'}</th>
+                  <th className="num" style={{ width: 130 }}>1:N in the well</th>
                   <th className="num">1:N in the solution</th>
-                  <th className="num">1:N in the well</th>
                   <th className="num">Stock to add (µl)</th>
                   <th>Notes</th>
                   <th className="no-print" style={{ width: 36 }} />
@@ -302,7 +295,6 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                         <input type="number" step="any" value={c.dilution} onChange={(e) => setComponent(c.id, { dilution: Number(e.target.value) })} />
                       </td>
                       <td className="calc num">{res ? round(res.preparedDilution, 2) : ''}</td>
-                      <td className="calc num">{res?.inWellDilution ? round(res.inWellDilution, 2) : '—'}</td>
                       <td className="calc num">{res ? fmtVol(res.stock_ul, 3) : ''}</td>
                       <td className="input">
                         <input style={{ textAlign: 'left' }} value={c.notes} onChange={(e) => setComponent(c.id, { notes: e.target.value })} />

@@ -91,7 +91,11 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
     param('DMSO in every tube', pct(result.target)),
     param('DMSO in the well', pct(result.inWellDmso), exp.dmsoPlacement === 'all-buffers' ? 'every buffer carries it' : `after the ${round(result.additionFactor, 3)}× addition`),
     param('Set by', exp.dmsoOverride !== null ? 'a forced value' : result.computedTarget > 0 ? 'the worst DMSO stock' : 'no DMSO stocks in use'),
-    param('Added to the well', `${exp.addition.compound_ul} µl into ${exp.addition.inWell_ul} µl`, `= ${round(result.additionFactor, 3)}×`),
+    param(
+      'The well',
+      `${exp.addition.assayBuffer_ul} µl buffer + ${result.substrate.enabled ? `${exp.substrate.volumePerWell_ul} µl substrate + ` : ''}${exp.addition.compound_ul} µl compound`,
+      `compound diluted ${round(result.additionFactor, 3)}×`,
+    ),
     ...(exp.bsa.enabled
       ? [
           [],
@@ -136,8 +140,8 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
       param('Wells × margin', `${sub.wells} × ${sub.margin}`, `= ${round(result.substrate.required_ul, 1)} µl to prepare`),
       param(
         'Diluted in the well by',
-        result.substrate.foldFactor === null ? 'used as prepared (kit recipe)' : `${round(result.substrate.foldFactor, 3)}×`,
-        result.substrate.foldFactor === null ? '' : sub.reference === 'after-compounds' ? '1× after the compounds' : '1× before the compounds',
+        `${round(result.substrate.foldFactor, 3)}×`,
+        sub.reference === 'after-compounds' ? 'counting the compound addition' : 'before the compounds go in',
       ),
     ]);
     rows.push([
@@ -151,7 +155,7 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
       rows.push([
         { v: c.name, s: label() },
         { v: round(c.preparedDilution, 2), s: value() },
-        { v: c.inWellDilution ? round(c.inWellDilution, 2) : '—', s: value() },
+        { v: round(c.inWellDilution, 2), s: value() },
         { v: round(c.stock_ul, 3), s: pipette() },
         { v: c.notes, s: muted() },
       ]);

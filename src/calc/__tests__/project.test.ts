@@ -59,6 +59,31 @@ describe('enable / clear a condition', () => {
 });
 
 describe('project migration', () => {
+  it('splits the old "already in the well" into plain buffer plus the substrate', () => {
+    const old = {
+      version: 3,
+      name: 'mid-flight', createdAt: '', updatedAt: '', notes: '',
+      transfection: { cells_k_per_well: 30, optimemMode: 'fixed' },
+      dnaStocks: [], compounds: [],
+      grid: { cols: 1, rowGroups: 1, colLabels: [''], rowGroupLabels: [''], conditions: [[]] },
+      dilutions: {
+        assayType: 'NanoBiT/BRET',
+        dmsoOverride: null,
+        addition: { compound_ul: 10, inWell_ul: 90 },
+        dmsoPlacement: 'compound-only',
+        blocks: [],
+        bsa: { enabled: false, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' },
+        substrate: { enabled: true, volumePerWell_ul: 10, wells: 96, margin: 1.2, reference: 'as-prepared', basis: 'prepared', components: [], notes: '' },
+        bufferNotes: '',
+      },
+    };
+    const m = migrate(old) as any;
+    // 90 µl in the well was 80 µl of buffer plus the substrate's own 10 µl
+    expect(m.dilutions.addition).toEqual({ compound_ul: 10, assayBuffer_ul: 80 });
+    expect(m.dilutions.substrate.basis).toBeUndefined();
+    expect(m.dilutions.substrate.reference).toBe('after-compounds');
+  });
+
   it('turns an old in-well factor into the addition it stood for', () => {
     const old = {
       version: 3,
@@ -76,8 +101,8 @@ describe('project migration', () => {
       },
     };
     const m = migrate(old) as any;
-    // 2× used to mean equal volumes: 10 µl into 10 µl.
-    expect(m.dilutions.addition).toEqual({ compound_ul: 10, inWell_ul: 10 });
+    // 2× used to mean equal volumes: 10 µl of compound into 10 µl of buffer.
+    expect(m.dilutions.addition).toEqual({ compound_ul: 10, assayBuffer_ul: 10 });
     expect(m.dilutions.inWellFactor).toBeUndefined();
     // an 'in-well' BSA basis meant the buffer was premixed that much stronger
     expect(m.dilutions.bsa.targetPct).toBeCloseTo(0.04, 12);
@@ -98,6 +123,7 @@ describe('project migration', () => {
     expect(m.version).toBe(PROJECT_VERSION);
     expect(m.dilutions.assayType).toBe('NanoBiT/BRET');
     expect(m.dilutions.addition.compound_ul).toBeGreaterThan(0);
+    expect(m.dilutions.addition.assayBuffer_ul).toBeGreaterThanOrEqual(0);
     expect(m.dilutions.dmsoPlacement).toBe('compound-only');
     expect(m.dilutions.blocks.length).toBeGreaterThan(0);
   });

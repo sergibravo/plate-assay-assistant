@@ -6,16 +6,13 @@
  * so whatever that buffer carries (DMSO, BSA) the substrate solution carries too. That
  * coupling is handled in `dilutions.ts`, which premixes it alongside the other diluents.
  *
- * The only subtlety here is what a quoted dilution refers to. Two conventions are in use:
+ * Dilutions are always quoted as the **final concentration in the well** — the number that
+ * means something biologically — and the app works back to what to put in the tube. With
+ * 80 µl buffer + 10 µl substrate + 10 µl compound, furimazine at 1:1000 in the well is
+ * prepared at 1:100, because the solution is diluted 10× on its way in.
  *
- * - **BRET / NanoBiT** — the meaningful number is the *final in-well* dilution (furimazine
- *   1:1000). The solution is spiked so that it lands there once diluted in the well: with
- *   80 µl buffer + 10 µl substrate + 10 µl compound, 10 µl of a 1:100 solution ends at
- *   1:1000. Whether that fold is 10× (referenced after the compounds go in) or 9× (before)
- *   is a real choice people make differently, so it is a setting.
- * - **HiBiT kits** — the quoted numbers (substrate 1:100, LgBiT 1:200) are the *prepared*
- *   recipe, added as-is with no fold correction. The app then reports no in-well figure
- *   rather than inventing one.
+ * Whether that fold counts the compound addition (10×) or stops before it (9×) is a real
+ * choice people make differently, so it is a setting.
  */
 
 import type { Warning } from './types';
@@ -24,18 +21,17 @@ import { MIN_PIPETTE_UL, round } from './units';
 export interface SubstrateComponent {
   id: string;
   name: string;
-  /** The N of a 1:N dilution, read according to `SubstrateSettings.basis`. */
+  /** The N of a 1:N dilution **in the well**. */
   dilution: number;
   notes: string;
 }
 
 /**
- * What a quoted dilution is referenced to.
+ * When the quoted dilution is meant to hold.
  * - `after-compounds`  — 1× once buffer + substrate + compound are all in the well.
  * - `before-compounds` — 1× in the well before the compound is added.
- * - `as-prepared`      — the kit's own recipe; no fold correction, no in-well claim.
  */
-export type SubstrateReference = 'after-compounds' | 'before-compounds' | 'as-prepared';
+export type SubstrateReference = 'after-compounds' | 'before-compounds';
 
 export interface SubstrateSettings {
   enabled: boolean;
@@ -45,8 +41,6 @@ export interface SubstrateSettings {
   wells: number;
   margin: number;
   reference: SubstrateReference;
-  /** Whether `component.dilution` is the prepared solution's or the final well's. */
-  basis: 'prepared' | 'in-well';
   components: SubstrateComponent[];
   notes: string;
 }
@@ -56,8 +50,8 @@ export interface SubstrateComponentResult {
   name: string;
   /** 1:N in the solution you prepare — what the bench sheet needs. */
   preparedDilution: number;
-  /** 1:N in the well; `null` when the recipe is not fold-corrected. */
-  inWellDilution: number | null;
+  /** 1:N in the well — what the user typed. */
+  inWellDilution: number;
   /** Stock to pipette into the premix. */
   stock_ul: number;
   notes: string;
@@ -65,9 +59,9 @@ export interface SubstrateComponentResult {
 
 export interface SubstrateResult {
   enabled: boolean;
-  /** How much the solution is diluted in the well, or `null` when not fold-corrected. */
-  foldFactor: number | null;
-  /** Assay buffer already in the well, once the substrate's own volume is taken out. */
+  /** How much the solution is diluted on its way into the well. */
+  foldFactor: number;
+  /** Assay buffer in the well alongside the substrate. */
   assayBufferPerWell_ul: number;
   /** `volumePerWell × wells × margin`. */
   required_ul: number;
@@ -75,25 +69,27 @@ export interface SubstrateResult {
   warnings: Warning[];
 }
 
-/** The well as it stands when the substrate is added. */
+/**
+ * The well, as a set of volumes rather than an ordering — nothing here depends on what is
+ * pipetted first, so an empty well (no assay buffer at all) is perfectly legal.
+ */
 export interface WellContext {
-  /** In the well before the compound goes in — assay buffer plus the substrate itself. */
-  inWell_ul: number;
-  /** Compound solution added per well. */
+  /** Plain assay buffer per well. May be 0. */
+  assayBuffer_ul: number;
+  /** Compound solution added per well. May be 0. */
   compound_ul: number;
   /** The volume of substrate solution actually being premixed, for the stock volumes. */
   prepare_ul: number;
 }
 
-/**
- * How much the prepared solution is diluted by the time it counts.
- * `null` for a kit recipe that is used as prepared.
- */
-export function substrateFold(s: SubstrateSettings, ctx: WellContext): number | null {
-  if (s.reference === 'as-prepared') return null;
+/** How much the prepared solution is diluted by the time the quoted dilution counts. */
+export function substrateFold(s: SubstrateSettings, ctx: WellContext): number {
   const v = s.volumePerWell_ul;
-  if (v <= 0) return null;
-  const total = s.reference === 'after-compounds' ? ctx.inWell_ul + ctx.compound_ul : ctx.inWell_ul;
+  if (v <= 0) return 1;
+  const total =
+    s.reference === 'after-compounds'
+      ? ctx.assayBuffer_ul + v + ctx.compound_ul
+      : ctx.assayBuffer_ul + v;
   return total / v;
 }
 
@@ -104,29 +100,25 @@ export function computeSubstrate(s: SubstrateSettings, ctx: WellContext): Substr
 
   const fold = substrateFold(s, ctx);
   const required_ul = Math.max(0, s.volumePerWell_ul * s.wells * s.margin);
-  const assayBufferPerWell_ul = ctx.inWell_ul - s.volumePerWell_ul;
+  const assayBufferPerWell_ul = ctx.assayBuffer_ul;
 
   const components: SubstrateComponentResult[] = s.components.map((c) => {
-    // `prepared` is always what goes into the tube; `in-well` is what the cells see.
-    const preparedDilution = s.basis === 'in-well' && fold ? c.dilution / fold : c.dilution;
-    const inWellDilution = fold ? preparedDilution * fold : null;
+    // The user quotes the well; the tube has to be that much stronger.
+    const preparedDilution = c.dilution / fold;
     const stock_ul = preparedDilution > 0 ? ctx.prepare_ul / preparedDilution : 0;
-    return { id: c.id, name: c.name, preparedDilution, inWellDilution, stock_ul, notes: c.notes };
+    return { id: c.id, name: c.name, preparedDilution, inWellDilution: c.dilution, stock_ul, notes: c.notes };
   });
 
   if (s.enabled) {
     if (s.volumePerWell_ul <= 0) warn('error', 'substrate-no-volume', 'Substrate volume per well must be greater than 0.');
     if (s.wells <= 0) warn('error', 'substrate-no-wells', 'Set the number of wells to measure.');
-    if (assayBufferPerWell_ul < -1e-9) {
-      warn(
-        'error',
-        'substrate-exceeds-well',
-        `${s.volumePerWell_ul} µl of substrate does not fit in the ${ctx.inWell_ul} µl already in the well. Raise the volume in the well, or lower the substrate volume.`,
-      );
-    }
     for (const c of components) {
       if (c.preparedDilution <= 1) {
-        warn('error', 'substrate-dilution', `${c.name}: a 1:${round(c.preparedDilution, 3)} dilution is not a dilution — check the number and the basis.`);
+        warn(
+          'error',
+          'substrate-dilution',
+          `${c.name}: 1:${round(c.inWellDilution, 3)} in the well would need the solution at 1:${round(c.preparedDilution, 3)} — that is not a dilution. Use a more dilute target, or add less substrate per well.`,
+        );
       } else if (c.stock_ul > 0 && c.stock_ul < MIN_PIPETTE_UL) {
         warn(
           'warn',
@@ -152,26 +144,28 @@ export function defaultSubstrate(assay: 'NanoBiT/BRET' | 'HiBiT' | 'DERET'): Sub
   const base = { enabled: true, wells: 96, margin: 1.2, notes: '' };
   switch (assay) {
     case 'HiBiT':
-      // Kit recipe: added as prepared, so no fold correction is claimed.
+      /*
+       * The kit quotes its reagent recipe (substrate 1:100, LgBiT 1:200) for a reagent added
+       * in equal volume, i.e. diluted 2× in the well — so in-well those are 1:200 and 1:400,
+       * which is how they are entered here. Check the numbers against the volumes you use.
+       */
       return {
         ...base,
         volumePerWell_ul: 50,
-        reference: 'as-prepared',
-        basis: 'prepared',
+        reference: 'after-compounds',
         components: [
-          { id: cid(), name: 'HiBiT Extracellular substrate', dilution: 100, notes: '1:100 from stock' },
-          { id: cid(), name: 'LgBiT protein', dilution: 200, notes: '1:200 from stock' },
+          { id: cid(), name: 'HiBiT Extracellular substrate', dilution: 200, notes: 'kit 1:100 in the reagent' },
+          { id: cid(), name: 'LgBiT protein', dilution: 400, notes: 'kit 1:200 in the reagent' },
         ],
       };
     case 'DERET':
       // Furimazine is the diluent for the compounds themselves; not calculated yet.
-      return { ...base, enabled: false, volumePerWell_ul: 10, reference: 'after-compounds', basis: 'in-well', components: [] };
+      return { ...base, enabled: false, volumePerWell_ul: 10, reference: 'after-compounds', components: [] };
     default:
       return {
         ...base,
         volumePerWell_ul: 10,
         reference: 'after-compounds',
-        basis: 'in-well',
         components: [{ id: cid(), name: 'Substrate (e.g. furimazine)', dilution: 1000, notes: '1:1000 in the well' }],
       };
   }

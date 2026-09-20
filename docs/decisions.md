@@ -89,6 +89,19 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
   it cannot normally happen, but module 3 falls back to an empty section rather than throwing
   mid-experiment.
 
+## Module 3 corrections (2026-09-20)
+
+- **"Override target" was misread as a volume.** The DMSO panel now says the numbers are
+  concentrations in so many words, and the field reads "Force a different % (optional)" with
+  a `% DMSO` unit. Naming a field after what it does to the maths is not enough; it has to
+  say what it *is*.
+- **BSA carrier is matched the same way DMSO is**, but more simply: both diluents get the
+  same BSA fraction, so no two-buffer split is needed. The user sets the % wanted, whether
+  that % refers to the prepared buffer or the final well, and the BSA stock strength (which
+  varies between lots). A compound whose stock already carries BSA declares it per block.
+- **The diluents now come with a premix recipe** — base buffer + DMSO + BSA stock for each —
+  because "premix 2984 µl of DMSO buffer" is not actionable on its own.
+
 ## Open / deferred
 
 - Deeper UI polish (keyboard navigation, sidebar, density) waits until modules 2 and 3 exist,

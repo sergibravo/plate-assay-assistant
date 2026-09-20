@@ -87,16 +87,36 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
     [{ v: 'Assay', s: label() }, { v: exp.assayType, s: { font: { bold: true } } }],
     [{ v: 'Printed', s: label() }, { v: new Date().toLocaleString(), s: muted() }],
     [],
-    section('DMSO VEHICLE MATCHING'),
-    param('Working DMSO (every tube)', pct(result.target)),
-    param('In-well DMSO', pct(result.inWellDmso), `after the ${exp.inWellFactor}× addition`),
-    param('Computed from', result.computedTarget > 0 ? 'the worst DMSO stock' : 'no DMSO stocks in use'),
-    ...(exp.dmsoOverride !== null ? [param('Override applied', pct(exp.dmsoOverride))] : []),
+    section('DMSO VEHICLE MATCHING  (concentrations, not volumes)'),
+    param('DMSO in every tube', pct(result.target)),
+    param('DMSO in the well', pct(result.inWellDmso), `after the ${exp.inWellFactor}× addition`),
+    param('Set by', exp.dmsoOverride !== null ? 'a forced value' : result.computedTarget > 0 ? 'the worst DMSO stock' : 'no DMSO stocks in use'),
+    ...(exp.bsa.enabled
+      ? [
+          [],
+          section('BSA CARRIER'),
+          param('BSA in every tube', pct(result.bsaBufferFraction)),
+          param('BSA in the well', pct(result.bsaInWell), `after the ${exp.inWellFactor}× addition`),
+          param('Made from a stock at', `${exp.bsa.stockPct} %`),
+        ]
+      : []),
     [],
-    section(`PREMIX — ${result.assay.diluent.toUpperCase()}`),
-    [{ v: result.assay.normalBufferName, s: pipetteLabel() }, { v: round(result.totalNormalBuffer_ul, 1), s: pipette() }, { v: 'µl', s: unit() }],
-    [{ v: result.assay.dmsoBufferName, s: pipetteLabel() }, { v: round(result.totalDmsoBuffer_ul, 1), s: pipette() }, { v: 'µl', s: unit() }],
-    [{ v: result.target > 0 ? `The DMSO diluent is ${result.assay.diluent} premixed at ${pct(result.target)} DMSO.` : 'No DMSO stocks: plain diluent throughout.', s: muted() }],
+    section(`PREMIX THE DILUENTS — ${result.assay.diluent.toUpperCase()}`),
+    [
+      { v: 'Diluent', s: { font: { bold: true } } },
+      { v: 'Prepare (µl)', s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
+      { v: `${result.assay.diluent} (µl)`, s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
+      { v: 'DMSO (µl)', s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
+      { v: exp.bsa.enabled ? `BSA ${exp.bsa.stockPct} % (µl)` : 'BSA (µl)', s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
+    ],
+    ...result.recipes.map((r): Row => [
+      { v: r.name, s: pipetteLabel() },
+      { v: r.prepare_ul, s: pipette() },
+      { v: round(r.base_ul, 2), s: pipette() },
+      { v: r.dmso_ul > 0 ? round(r.dmso_ul, 3) : '—', s: pipette() },
+      { v: r.bsaStock_ul > 0 ? round(r.bsaStock_ul, 3) : '—', s: pipette() },
+    ]),
+    [{ v: result.target > 0 ? `The DMSO diluent is ${result.assay.diluent} premixed at ${pct(result.target)} DMSO; the other carries none.` : 'No DMSO stocks: plain diluent throughout.', s: muted() }],
   ];
 
   for (const note of result.assay.pending) rows.push([{ v: `Note: ${note}`, s: muted() }]);
@@ -191,7 +211,7 @@ function sheetFromRows(rows: Row[], colWidths: number[]): XLSX.WorkSheet {
 
 export function exportDilutionsXlsx(project: Project, result: DilutionResult): void {
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, sheetFromRows(dilutionBenchSheetRows(project, result), [26, 16, 16, 20, 20, 20, 16]), 'Dilutions');
+  XLSX.utils.book_append_sheet(wb, sheetFromRows(dilutionBenchSheetRows(project, result), [30, 16, 20, 20, 20, 20, 16]), 'Dilutions');
   const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   triggerDownload(new Blob([out], { type: 'application/octet-stream' }), `${slug(project.name)}-dilutions.xlsx`);
 }

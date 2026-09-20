@@ -161,6 +161,7 @@ export function newCompoundBlock(name = '', rows = 8): CompoundBlock {
     margin: 1,
     excludeFromVehicleMatch: false,
     logM: Array.from({ length: rows }, () => null),
+    stockBsaPct: null,
     notes: '',
   };
 }
@@ -171,6 +172,7 @@ export function emptyDilutions(): DilutionExperiment {
     dmsoOverride: null,
     inWellFactor: 2,
     blocks: [newCompoundBlock('Compound 1')],
+    bsa: { enabled: false, targetPct: 0.01, stockPct: 5, basis: 'buffer' },
     bufferNotes: '',
   };
 }
@@ -243,6 +245,7 @@ export function migrate(raw: any): Project {
   // Fields added after a project was saved fall back to the previous behaviour.
   p.transfection = { optimemMode: 'fixed', ...p.transfection };
   p.dilutions = { ...emptyDilutions(), ...(p.dilutions ?? {}) };
+  p.dilutions.bsa = { ...emptyDilutions().bsa, ...(p.dilutions.bsa ?? {}) };
   p.dilutions.blocks = (p.dilutions.blocks ?? []).map((b: any) => ({ ...newCompoundBlock(), ...b }));
   p.compounds = p.compounds ?? [];
   p.notes = p.notes ?? '';

@@ -80,15 +80,18 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
       <Panel title="DMSO vehicle matching">
         <div className="grid-2">
           <div>
+            <p className="hint" style={{ margin: '0 0 8px' }}>
+              These are DMSO <strong>concentrations</strong>, not volumes: the % every tube is
+              brought to, so DMSO is the same in every compound well.
+            </p>
             <CalcField
-              label="Computed max working DMSO"
-              unit=""
+              label="Needed by the worst DMSO stock"
+              unit="% DMSO"
               value={result.computedTarget * 100}
               decimals={4}
-              hint="%"
             />
             <div className="field">
-              <label>Override target (blank = auto)</label>
+              <label>Force a different % (optional)</label>
               <input
                 type="number"
                 step="any"
@@ -98,9 +101,9 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                   setExp({ dmsoOverride: e.target.value === '' ? null : Number(e.target.value) / 100 })
                 }
               />
-              <span className="unit">% working</span>
+              <span className="unit">% DMSO</span>
             </div>
-            <CalcField label="Effective target — working DMSO" unit="" value={result.target * 100} decimals={4} hint="%" strong />
+            <CalcField label="Used — DMSO in every tube" unit="% DMSO" value={result.target * 100} decimals={4} strong />
             <NumField
               label="In-well dilution on addition"
               unit="×"
@@ -108,7 +111,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
               step={0.5}
               onChange={(v) => setExp({ inWellFactor: v })}
             />
-            <CalcField label="→ In-well DMSO" unit="" value={result.inWellDmso * 100} decimals={4} hint="%" strong />
+            <CalcField label="→ DMSO in the well" unit="% DMSO" value={result.inWellDmso * 100} decimals={4} strong />
           </div>
           <div>
             <h3>Premix for the whole experiment</h3>
@@ -140,6 +143,90 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
           </div>
         </div>
         <Legend />
+      </Panel>
+
+      <Panel title="BSA carrier">
+        <div className="grid-2">
+          <div>
+            <div className="field">
+              <label>Add BSA to the diluents</label>
+              <input
+                type="checkbox"
+                checked={exp.bsa.enabled}
+                onChange={(e) => setExp({ bsa: { ...exp.bsa, enabled: e.target.checked } })}
+                style={{ width: 16, justifySelf: 'end' }}
+              />
+              <span className="unit" />
+            </div>
+            {exp.bsa.enabled && (
+              <>
+                <NumField
+                  label="BSA wanted"
+                  unit="% (w/v)"
+                  value={exp.bsa.targetPct}
+                  step={0.001}
+                  onChange={(v) => setExp({ bsa: { ...exp.bsa, targetPct: v } })}
+                />
+                <div className="field">
+                  <label>…measured in</label>
+                  <div style={{ gridColumn: '2 / span 2' }}>
+                    <Segmented
+                      value={exp.bsa.basis}
+                      options={[
+                        { value: 'buffer' as const, label: 'the prepared buffer' },
+                        { value: 'in-well' as const, label: 'the final well' },
+                      ]}
+                      onChange={(v) => setExp({ bsa: { ...exp.bsa, basis: v } })}
+                    />
+                  </div>
+                </div>
+                <NumField
+                  label="BSA stock"
+                  unit="% (w/v)"
+                  value={exp.bsa.stockPct}
+                  step={0.5}
+                  onChange={(v) => setExp({ bsa: { ...exp.bsa, stockPct: v } })}
+                />
+                <CalcField label="Diluents premixed at" unit="% BSA" value={result.bsaBufferFraction * 100} decimals={4} strong />
+                <CalcField label="→ BSA in the well" unit="% BSA" value={result.bsaInWell * 100} decimals={4} />
+                <p className="hint">
+                  Both diluents carry the same BSA, so it stays constant across every compound.
+                  A compound whose stock already contains BSA can declare it in its own block; a
+                  stock without BSA leaves its top tube a hair under target, which is reported.
+                </p>
+              </>
+            )}
+          </div>
+          <div>
+            <h3>Premix recipe</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Diluent</th>
+                  <th className="num">Prepare (µl)</th>
+                  <th className="num">{result.assay.diluent} (µl)</th>
+                  <th className="num">DMSO (µl)</th>
+                  <th className="num">BSA {exp.bsa.enabled ? `${exp.bsa.stockPct} %` : ''} (µl)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.recipes.map((r) => (
+                  <tr key={r.name}>
+                    <td>{r.name}</td>
+                    <td className="calc num">{r.prepare_ul}</td>
+                    <td className="calc num">{fmtVol(r.base_ul, 2)}</td>
+                    <td className="calc num">{r.dmso_ul > 0 ? fmtVol(r.dmso_ul, 3) : '—'}</td>
+                    <td className="calc num">{r.bsaStock_ul > 0 ? fmtVol(r.bsaStock_ul, 3) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="hint">
+              Volumes are what the compound blocks consume, rounded up to whole µl. Slack comes
+              from each compound's own margin.
+            </p>
+          </div>
+        </div>
       </Panel>
 
       {exp.blocks.map((block) => {
@@ -191,6 +278,19 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                   <span className="unit" />
                 </div>
                 <NumField label="Margin" unit="×" value={block.margin} step={0.1} onChange={(v) => setBlock(block.id, { margin: v })} />
+                {exp.bsa.enabled && (
+                  <div className="field">
+                    <label>BSA already in this stock</label>
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder="none"
+                      value={block.stockBsaPct ?? ''}
+                      onChange={(e) => setBlock(block.id, { stockBsaPct: e.target.value === '' ? null : Number(e.target.value) })}
+                    />
+                    <span className="unit">% (w/v)</span>
+                  </div>
+                )}
                 <div className="field">
                   <label>Exclude from DMSO matching</label>
                   <input

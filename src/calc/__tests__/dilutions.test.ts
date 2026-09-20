@@ -16,15 +16,19 @@ const block = (over: Partial<CompoundBlock> = {}): CompoundBlock => ({
   margin: 1,
   excludeFromVehicleMatch: false,
   logM: [],
+  stockBsaPct: null,
   notes: '',
   ...over,
 });
+
+const NO_BSA = { enabled: false, targetPct: 0.01, stockPct: 5, basis: 'buffer' as const };
 
 const experiment = (blocks: CompoundBlock[], over: Partial<DilutionExperiment> = {}): DilutionExperiment => ({
   assayType: 'NanoBiT/BRET',
   dmsoOverride: null,
   inWellFactor: 2,
   blocks,
+  bsa: NO_BSA,
   bufferNotes: '',
   ...over,
 });
@@ -246,5 +250,91 @@ describe('assay types', () => {
     const bret = computeDilutions(experiment(b));
     const deret = computeDilutions(experiment(b, { assayType: 'DERET' }));
     expect(deret.blocks[0].rows).toEqual(bret.blocks[0].rows);
+  });
+});
+
+/**
+ * BSA carrier. The worked case: compounds NOT in BSA, every diluent prepared at 0.01 %
+ * BSA from a 5 % stock.
+ */
+describe('BSA in the diluents', () => {
+  const bsa = { enabled: true, targetPct: 0.01, stockPct: 5, basis: 'buffer' as const };
+
+  it('is off by default and adds nothing', () => {
+    const r = computeDilutions(experiment([block({ name: 'Iso', logM: [-5] })]));
+    expect(r.bsaBufferFraction).toBe(0);
+    expect(r.recipes.every((x) => x.bsaStock_ul === 0)).toBe(true);
+    expect(r.blocks[0].rows[0].bsaFraction).toBe(0);
+  });
+
+  it('0.01 % from a 5 % stock = 2 µl of stock per 1000 µl of diluent', () => {
+    // one aqueous compound, 5 rows → a diluent volume in the ~1 ml range
+    const r = computeDilutions(experiment([block({ name: 'Iso', logM: [-5, -6, -7, -8, -9] })], { bsa }));
+    const normal = r.recipes[0];
+    expect(normal.bsaStock_ul).toBeCloseTo((normal.prepare_ul * 0.0001 * 100) / 5, 12);
+    expect(normal.bsaStock_ul / normal.prepare_ul).toBeCloseTo(0.002, 12); // 2 µl per ml
+    expect(normal.base_ul + normal.bsaStock_ul + normal.dmso_ul).toBeCloseTo(normal.prepare_ul, 9);
+  });
+
+  it('a stock without BSA leaves each tube a hair under target, and says by how much', () => {
+    const r = computeDilutions(experiment([block({ name: 'Iso', logM: [-5] })], { bsa }));
+    const top = r.blocks[0].rows[0];
+    // 199.6 µl of 0.01 % diluent in a 200 µl tube
+    expect(top.bsaFraction).toBeCloseTo(0.0001 * (199.6 / 200), 12);
+    expect(top.bsaFraction).toBeLessThan(0.0001);
+  });
+
+  it('a stock already in BSA at the same % lands exactly on target', () => {
+    const r = computeDilutions(
+      experiment([block({ name: 'Iso', logM: [-5], stockBsaPct: 0.01 })], { bsa }),
+    );
+    expect(r.blocks[0].rows[0].bsaFraction).toBeCloseTo(0.0001, 12);
+  });
+
+  it('the in-well basis makes the diluent that much stronger', () => {
+    const r = computeDilutions(
+      experiment([block({ name: 'Iso', logM: [-5] })], { bsa: { ...bsa, basis: 'in-well' } }),
+    );
+    expect(r.bsaBufferFraction).toBeCloseTo(0.0002, 12); // 2× for the 2× addition
+    expect(r.bsaInWell).toBeCloseTo(0.0001, 12);
+  });
+
+  it('BSA and DMSO share the same diluents without fighting', () => {
+    const r = computeDilutions(
+      experiment([
+        block({ id: 'iso', name: 'Iso', logM: [-5] }),
+        block({ id: 'nebi', name: 'Nebi', vehicle: 'DMSO', logM: [-5] }),
+      ], { bsa }),
+    );
+    const dmsoDiluent = r.recipes[1];
+    expect(dmsoDiluent.dmso_ul).toBeCloseTo(dmsoDiluent.prepare_ul * 0.002, 12);
+    expect(dmsoDiluent.bsaStock_ul).toBeCloseTo((dmsoDiluent.prepare_ul * 0.0001 * 100) / 5, 12);
+    expect(dmsoDiluent.base_ul).toBeCloseTo(
+      dmsoDiluent.prepare_ul - dmsoDiluent.dmso_ul - dmsoDiluent.bsaStock_ul,
+      9,
+    );
+    // the DMSO numbers are untouched by adding BSA
+    expect(r.target).toBeCloseTo(0.002, 12);
+    expect(r.blocks[0].rows[0].dmsoBuffer_ul).toBeCloseTo(199.6, 12);
+  });
+
+  it('refuses a BSA stock weaker than the target', () => {
+    const r = computeDilutions(
+      experiment([block({ name: 'Iso', logM: [-5] })], { bsa: { ...bsa, targetPct: 10 } }),
+    );
+    expect(r.warnings.some((w) => w.code === 'bsa-stock-too-weak')).toBe(true);
+  });
+
+  it('warns when the BSA or DMSO volume is too small to pipette', () => {
+    const r = computeDilutions(experiment([block({ name: 'Iso', volForWells_ul: 20, logM: [-5] })], { bsa }));
+    expect(r.warnings.some((w) => w.code === 'bsa-below-min-pipette')).toBe(true);
+  });
+
+  it('recipes add up and are rounded up to whole µl to prepare', () => {
+    const r = computeDilutions(experiment([block({ name: 'Iso', logM: [-5, -6] })], { bsa }));
+    for (const x of r.recipes) {
+      expect(x.prepare_ul).toBeGreaterThanOrEqual(x.required_ul);
+      expect(Number.isInteger(x.prepare_ul)).toBe(true);
+    }
   });
 });

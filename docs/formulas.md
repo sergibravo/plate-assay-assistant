@@ -118,6 +118,24 @@ outstanding (asserted by a test):
 | HiBiT | assay buffer (identical maths) | the more involved substrate preparation |
 | DERET | **furimazine solution** | preparing that furimazine from its stock |
 
+### BSA carrier (not in the sheet)
+
+Compounds often need carrier protein. Both diluents are premixed with BSA at the same
+fraction, so BSA — like DMSO — is constant across every compound well:
+
+| Quantity | Formula |
+| --- | --- |
+| Buffer BSA fraction | `basis = 'buffer' ? target : target × inWellFactor` |
+| BSA stock per diluent | `prepared volume × buffer fraction ÷ (stock % / 100)` |
+| Base buffer per diluent | `prepared volume − DMSO − BSA stock` |
+| BSA in a tube | `(aliquot × stock BSA + make-up × buffer fraction) ÷ volume` |
+
+`basis` settles the ambiguity in "0.01 % final": either the prepared diluent sits at that %,
+or the well does after the `inWellFactor` addition. A compound whose stock already contains
+BSA declares it per block; a stock without BSA leaves its top tube a hair under target
+(199.6 µl of diluent cannot fill 200 µl), which is computed and reported rather than assumed
+away. Worked case: 0.01 % from a 5 % stock = 2 µl of stock per 1 ml of diluent.
+
 ### Additions beyond the sheet
 
 - An **excluded** compound (the sheet's Terbium) is made up with DMSO-free diluent only, and

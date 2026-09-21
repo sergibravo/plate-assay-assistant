@@ -500,3 +500,40 @@ describe('where the DMSO sits', () => {
     expect(b.blocks[0].rows).toEqual(a.blocks[0].rows);
   });
 });
+
+describe('DMSO the cells would actually see', () => {
+  it('says so when the wells would end above 1 % DMSO, and names the stock responsible', () => {
+    // 10 µM out of a 500 µM stock is 2 % DMSO in the well, whatever the volumes
+    const weak = block({ name: 'weak stock', vehicle: 'DMSO', stockConc_uM: 500, logM: [-5] });
+    const r = computeDilutions(
+      experiment([weak], { addition: { compound_ul: 10, assayBuffer_ul: 130 }, dmsoPlacement: 'compound-only' }),
+    );
+    const w = r.warnings.find((x) => x.code === 'dmso-in-well-high');
+    expect(w?.level).toBe('warn');
+    expect(w?.message).toMatch(/weak stock/);
+    expect(w?.message).toMatch(/500 µM/);
+  });
+
+  it('the well sees the top dose divided by the stock, whatever the volumes', () => {
+    const b = [block({ name: 'Nebi', vehicle: 'DMSO', stockConc_uM: 10000, logM: [-5] })];
+    const small = computeDilutions(experiment(b, { addition: { compound_ul: 10, assayBuffer_ul: 90 } }));
+    const big = computeDilutions(experiment(b, { addition: { compound_ul: 50, assayBuffer_ul: 50 } }));
+    expect(small.inWellDmso).toBeCloseTo(10 / 10000, 12);
+    expect(big.inWellDmso).toBeCloseTo(10 / 10000, 12);
+  });
+
+  it('stays quiet at the concentrations normally used', () => {
+    const r = computeDilutions(experiment([block({ name: 'Nebi', vehicle: 'DMSO', logM: [-5] })]));
+    expect(r.inWellDmso).toBeCloseTo(0.001, 12); // 0.1 %
+    expect(r.warnings.some((x) => x.code === 'dmso-in-well-high')).toBe(false);
+  });
+
+  it('counts where the DMSO sits: the same tubes are worse when every buffer carries it', () => {
+    const blocks = [block({ name: 'Nebi', vehicle: 'DMSO', stockConc_uM: 1000, logM: [-5] })];
+    const spike = computeDilutions(experiment(blocks, { dmsoPlacement: 'compound-only' }));
+    const uniform = computeDilutions(experiment(blocks, { dmsoPlacement: 'all-buffers' }));
+    expect(uniform.inWellDmso).toBeGreaterThan(spike.inWellDmso);
+    expect(uniform.warnings.some((x) => x.code === 'dmso-in-well-high')).toBe(true);
+    expect(spike.warnings.some((x) => x.code === 'dmso-in-well-high')).toBe(false);
+  });
+});

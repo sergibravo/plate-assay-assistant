@@ -224,6 +224,14 @@ BSA declares it per block; a stock without BSA leaves its top tube a hair under 
 (199.6 µl of diluent cannot fill 200 µl), which is computed and reported rather than assumed
 away. Worked case: 0.01 % from a 5 % stock = 2 µl of stock per 1 ml of diluent.
 
+### An invariant worth knowing
+
+For the `compound-only` placement the DMSO a well ends at is just
+`top concentration / stock concentration` — the addition factor cancels out, since the tube
+is prepared `f ×` stronger and then diluted `f ×`. Changing volumes therefore cannot lower
+in-well DMSO; only a more concentrated stock or a lower top dose can. The app says so when
+the figure passes `DMSO_IN_WELL_CONCERN` (1 %), which is where most cells start to object.
+
 ### Additions beyond the sheet
 
 - An **excluded** compound (the sheet's Terbium) is made up with DMSO-free diluent only, and

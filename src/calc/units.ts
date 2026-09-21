@@ -41,6 +41,13 @@ export function uMToLogM(uM: number): number {
 export const MIN_PIPETTE_UL = 0.5;
 
 /**
+ * In-well DMSO that most cells tolerate. Above this the app says so: it is not a hard limit
+ * — some assays run higher deliberately — but at that point it is usually a sign that a
+ * stock is too dilute for the spike being asked of it.
+ */
+export const DMSO_IN_WELL_CONCERN = 0.01; // 1 %
+
+/**
  * A relative deviation smaller than this is not worth correcting: it is well inside the
  * error of the pipetting that a correction would itself introduce. Used for the carrier
  * (BSA / DMSO) that stocks displace when a premix is made from ready-made assay buffer.

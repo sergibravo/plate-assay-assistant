@@ -20,7 +20,7 @@
 
 import { computeSubstrate, defaultSubstrate, type SubstrateResult, type SubstrateSettings } from './substrate';
 import type { Vehicle, Warning } from './types';
-import { ceilingTo1, logMToUM, MIN_PIPETTE_UL, NEGLIGIBLE_RELATIVE, round } from './units';
+import { ceilingTo1, DMSO_IN_WELL_CONCERN, logMToUM, MIN_PIPETTE_UL, NEGLIGIBLE_RELATIVE, round } from './units';
 
 /**
  * What the compounds are diluted into, and what else the assay needs prepared.
@@ -685,6 +685,19 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
       message: `"Added differently" is set to ${b.dilutionFactorOverride}× in this compound's panel (second field, under the volume for wells) — a dilution cannot be zero or negative. Clear that field to use the experiment's addition.`,
     });
   }
+  const inWellDmso = inWellFraction(target, exp.dmsoPlacement, factor);
+  if (inWellDmso > DMSO_IN_WELL_CONCERN) {
+    const worst = exp.blocks
+      .map((b) => ({ b, load: dmsoLoadOf(b, blockFactor(exp, b)) }))
+      .sort((x, y) => y.load - x.load)[0];
+    warnings.push({
+      level: 'warn',
+      code: 'dmso-in-well-high',
+      scope: 'DMSO matching',
+      message: `The wells would end at ${round(inWellDmso * 100, 3)} % DMSO — most cells are kept under ${round(DMSO_IN_WELL_CONCERN * 100, 1)} %, and often under 0.1 %. ${worst?.b.name || 'A DMSO stock'} sets it: its top dose is ${round(logMToUM(usedRows(worst.b)[0] ?? 0), 4)} µM out of a ${worst?.b.stockConc_uM} µM stock${exp.dmsoPlacement === 'all-buffers' ? `, and every buffer carries that DMSO` : ''}. Volumes will not help — the well sees the top dose divided by the stock — so it takes a more concentrated stock or a lower top dose.`,
+    });
+  }
+
   const hasCompounds = exp.blocks.some((b) => usedRows(b).length > 0);
   if (hasCompounds && exp.addition.compound_ul <= 0) {
     warnings.push({

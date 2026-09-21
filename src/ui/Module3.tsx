@@ -493,7 +493,9 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
         return (
           <Panel
             key={block.id}
-            title={`Compound — ${block.name || 'unnamed'}`}
+            title={`Compound — ${block.name || 'unnamed'}${
+              block.dilutionFactorOverride !== null ? ` · added at ${block.dilutionFactorOverride}×, not ${round(result.additionFactor, 3)}×` : ''
+            }`}
             actions={
               <div className="no-print" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 <button className="btn small" onClick={() => fillSeries(block, 1)} title="Fill the rows below the top one in whole-log steps">
@@ -526,7 +528,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                 </div>
                 <NumField label="Vol for wells" unit="µl" value={block.volForWells_ul} onChange={(v) => setBlock(block.id, { volForWells_ul: v })} />
                 <div className="field">
-                  <label>Added differently (optional)</label>
+                  <label>Added differently<em className="sub"> (optional)</em></label>
                   <input
                     type="number"
                     step="any"

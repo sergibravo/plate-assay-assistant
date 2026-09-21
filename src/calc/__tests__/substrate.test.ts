@@ -55,21 +55,23 @@ describe('BRET / NanoBiT substrate', () => {
 
 describe('HiBiT substrate', () => {
   const hibit = defaultSubstrate('HiBiT');
-  /** 50 µl of reagent added to 50 µl of buffer — the kit's equal-volume addition. */
-  const hibitWell = { assayBuffer_ul: 50, compound_ul: 0, prepare_ul: 5000 };
+  /** 50 µl of substrate added to 50 µl of buffer. */
+  const hibitWell = { assayBuffer_ul: 50, compound_ul: 10, prepare_ul: 5000 };
 
-  it('defaults to 50 µl/well, quoted in the well: substrate 1:200, LgBiT 1:400', () => {
+  it('defaults to 50 µl/well: substrate 1:100 and LgBiT 1:200, in the well', () => {
     expect(hibit.volumePerWell_ul).toBe(50);
-    expect(hibit.components.map((c) => c.dilution)).toEqual([200, 400]);
+    expect(hibit.components.map((c) => c.dilution)).toEqual([100, 200]);
   });
 
-  it('an equal-volume addition is 2×, so the reagent is the kit\'s 1:100 and 1:200', () => {
+  it('counts those dilutions before the compounds go in', () => {
+    expect(hibit.reference).toBe('before-compounds');
+    // (50 buffer + 50 substrate) / 50 — the compound's 10 µl does not count
     expect(substrateFold(hibit, hibitWell)).toBeCloseTo(2, 12);
     const r = computeSubstrate(hibit, hibitWell);
-    expect(r.components[0].preparedDilution).toBeCloseTo(100, 12);
-    expect(r.components[1].preparedDilution).toBeCloseTo(200, 12);
-    expect(r.components[0].stock_ul).toBeCloseTo(50, 12); // 5000 / 100
-    expect(r.components[1].stock_ul).toBeCloseTo(25, 12); // 5000 / 200
+    expect(r.components[0].preparedDilution).toBeCloseTo(50, 12);
+    expect(r.components[1].preparedDilution).toBeCloseTo(100, 12);
+    expect(r.components[0].stock_ul).toBeCloseTo(100, 12); // 5000 / 50
+    expect(r.components[1].stock_ul).toBeCloseTo(50, 12); //  5000 / 100
   });
 });
 

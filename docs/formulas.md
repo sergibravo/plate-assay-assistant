@@ -174,8 +174,8 @@ substrate defaults, and declares what is still outstanding (asserted by a test):
 
 | Assay | Compounds diluted in | Substrate default | Not yet calculated |
 | --- | --- | --- | --- |
-| NanoBiT/BRET | assay buffer | 10 µl/well, 1:1000 in the well, 1× after compounds | — |
-| HiBiT | assay buffer (identical maths) | 50 µl/well kit recipe: substrate 1:100, LgBiT 1:200 | — |
+| NanoBiT/BRET | assay buffer | 10 µl/well, 1:1000 in the well, counted after compounds | — |
+| HiBiT | assay buffer (identical maths) | 50 µl/well, substrate 1:100 and LgBiT 1:200, counted in the well **before** compounds | — |
 | DERET | **furimazine solution** | off | preparing the furimazine the compounds are diluted in |
 
 ### Substrate (`src/calc/substrate.ts`)
@@ -202,9 +202,9 @@ means something biologically — and the app works back to the tube.
 
 Worked case: 80 µl assay buffer + 10 µl substrate + 10 µl compound, furimazine 1:1000 in the
 well → fold 10×, prepared 1:100, 12 µl of stock in 1200 µl of solution. Referenced *before*
-the compounds instead, fold is 9× and the solution is 1:111.1. The HiBiT defaults are the kit
-recipe converted to in-well figures for an equal-volume addition (substrate 1:200, LgBiT
-1:400, which at the kit's 2× come back to 1:100 and 1:200 in the reagent).
+the compounds instead, fold is 9× and the solution is 1:111.1. The HiBiT defaults are 50 µl/well of
+substrate at 1:100 and LgBiT at 1:200, both in-well and counted before the compounds go in
+(confirmed by Sergi, 2026-09-21).
 
 ### BSA carrier (not in the sheet)
 

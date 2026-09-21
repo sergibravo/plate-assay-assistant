@@ -52,10 +52,9 @@ export const ASSAY_PROFILES: Record<AssayType, AssayProfile> = {
     diluent: 'assay buffer',
     normalBufferName: 'Assay buffer (no DMSO)',
     dmsoBufferName: 'Assay buffer + DMSO',
-    compoundsComplete: false,
+    compoundsComplete: true,
     pending: [
-      'Compounds are diluted in assay buffer exactly as for NanoBiT/BRET, so the numbers below apply.',
-      'The HiBiT substrate preparation is more involved and is NOT calculated yet.',
+      'Compounds are diluted in assay buffer exactly as for NanoBiT/BRET. The substrate defaults to 50 µl/well of HiBiT Extracellular substrate 1:100 and LgBiT 1:200, both counted in the well before the compounds — load the HiBiT defaults in the Substrate panel.',
     ],
   },
   DERET: {
@@ -668,11 +667,11 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
       level: 'warn',
       code: 'block-factor-override',
       scope: 'Addition',
-      message: `${overridden.map((b) => `${b.name || 'a compound'} (${b.dilutionFactorOverride}×)`).join(', ')} ${
-        overridden.length === 1 ? 'is' : 'are'
-      } added differently from the experiment's ${round(factor, 3)}× — so ${
+      message: `"Added differently" is set in ${overridden
+        .map((b) => `${b.name || 'a compound'}'s panel (${b.dilutionFactorOverride}×)`)
+        .join(' and ')}, against the experiment's ${round(factor, 3)}× — so ${
         overridden.length === 1 ? 'its well' : 'their wells'
-      } will not end at the same DMSO as the rest.`,
+      } will not end at the same DMSO as the rest. Clear that field to follow the experiment.`,
     });
   }
   const badOverride = exp.blocks.filter(
@@ -683,7 +682,7 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
       level: 'error',
       code: 'bad-factor-override',
       scope: b.name || 'compound',
-      message: `A dilution on addition of ${b.dilutionFactorOverride}× is impossible — it must be greater than 0. Clear the field to use the experiment's addition.`,
+      message: `"Added differently" is set to ${b.dilutionFactorOverride}× in this compound's panel (second field, under the volume for wells) — a dilution cannot be zero or negative. Clear that field to use the experiment's addition.`,
     });
   }
   const hasCompounds = exp.blocks.some((b) => usedRows(b).length > 0);

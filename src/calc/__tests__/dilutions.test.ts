@@ -246,11 +246,11 @@ describe('assay types', () => {
     expect(r.assay.compoundsComplete).toBe(true);
   });
 
-  it('HiBiT uses the same compound maths but declares the substrate as outstanding', () => {
+  it('HiBiT uses the same compound maths, and its substrate is covered too', () => {
     const r = computeDilutions(experiment([block({ name: 'Iso', logM: [-5] })], { assayType: 'HiBiT' }));
     expect(r.assay.diluent).toBe('assay buffer');
-    expect(r.assay.compoundsComplete).toBe(false);
-    expect(r.assay.pending.join(' ')).toMatch(/substrate/i);
+    expect(r.assay.compoundsComplete).toBe(true);
+    expect(r.assay.pending.join(' ')).toMatch(/1:100.*1:200/);
   });
 
   it('DERET dilutes compounds in furimazine, and says that preparation is not calculated', () => {

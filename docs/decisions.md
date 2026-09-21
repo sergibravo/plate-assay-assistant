@@ -181,6 +181,16 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
   table now separates "prepare, in this order" from "then pour off, no additions", and the
   batch total already includes the poured portions.
 
+## HiBiT substrate confirmed (2026-09-21)
+
+- **HiBiT: substrate 1:100 and LgBiT 1:200, in the well, counted before the compounds.**
+  Sergi confirmed the kit numbers are in-well figures, not the reagent recipe — an earlier
+  guess had converted them to 1:200 / 1:400 for an equal-volume addition, which was wrong.
+  HiBiT is no longer flagged as having an uncalculated substrate.
+- **An override announces itself.** A per-compound "Added differently" value now appears in
+  that compound's panel heading, and the warnings name the field and the panel rather than
+  just the number, because the value itself proved hard to find in a long page.
+
 ## Open / deferred
 
 - Deeper UI polish (keyboard navigation, sidebar, density) waits until modules 2 and 3 exist,

@@ -144,18 +144,15 @@ export function defaultSubstrate(assay: 'NanoBiT/BRET' | 'HiBiT' | 'DERET'): Sub
   const base = { enabled: true, wells: 96, margin: 1.2, notes: '' };
   switch (assay) {
     case 'HiBiT':
-      /*
-       * The kit quotes its reagent recipe (substrate 1:100, LgBiT 1:200) for a reagent added
-       * in equal volume, i.e. diluted 2× in the well — so in-well those are 1:200 and 1:400,
-       * which is how they are entered here. Check the numbers against the volumes you use.
-       */
+      // 50 µl/well of substrate 1:100 and LgBiT 1:200, both counted in the well and before
+      // the compounds go in.
       return {
         ...base,
         volumePerWell_ul: 50,
-        reference: 'after-compounds',
+        reference: 'before-compounds',
         components: [
-          { id: cid(), name: 'HiBiT Extracellular substrate', dilution: 200, notes: 'kit 1:100 in the reagent' },
-          { id: cid(), name: 'LgBiT protein', dilution: 400, notes: 'kit 1:200 in the reagent' },
+          { id: cid(), name: 'HiBiT Extracellular substrate', dilution: 100, notes: '1:100 in the well' },
+          { id: cid(), name: 'LgBiT protein', dilution: 200, notes: '1:200 in the well' },
         ],
       };
     case 'DERET':

@@ -54,7 +54,7 @@ export interface MasterMixTotals {
   optimemForPeiPerCondition_ul: number;
   /** `PEI Mix!C8 = C7*C4*Setup!C8` */
   totalOptimemForPei_ul: number;
-  /** `PEI Mix!F4 = Setup!F5*Setup!C4*Setup!C8*C4` */
+  /** `PEI Mix!F4 = Setup!F5*Setup!C4*C4`, at the cell-suspension margin. */
   dmemTotal_ul: number;
   /** `PEI Mix!F5 = Setup!F4*Setup!C4*Setup!C8*C4`, in thousands of cells. */
   totalCells_k: number;
@@ -71,8 +71,8 @@ export function masterMix(p: TransfectionParams, nConditions: number): MasterMix
     totalPei_ul: per.pei_ul * nConditions * p.margin,
     optimemForPeiPerCondition_ul: per.optimemForPei_ul,
     totalOptimemForPei_ul: per.optimemForPei_ul * nConditions * p.margin,
-    dmemTotal_ul: p.dmem_ul_per_well * p.wellsPerCondition * p.margin * nConditions,
-    totalCells_k: p.cells_k_per_well * p.wellsPerCondition * p.margin * nConditions,
+    dmemTotal_ul: p.dmem_ul_per_well * p.wellsPerCondition * p.cellSuspensionMargin * nConditions,
+    totalCells_k: p.cells_k_per_well * p.wellsPerCondition * p.cellSuspensionMargin * nConditions,
     cellSuspensionPerCondition_ul: p.dmem_ul_per_well * p.wellsPerCondition,
   };
 }
@@ -268,7 +268,8 @@ export function validateParams(p: TransfectionParams): Warning[] {
   if (p.wellsPerCondition <= 0) push('wells', 'Wells per condition must be greater than 0.');
   if (p.dna_ng_per_well <= 0) push('dna', 'DNA per well must be greater than 0.');
   if (p.pei_ug_per_ul <= 0) push('pei-stock', 'PEI stock concentration must be greater than 0.');
-  if (p.margin < 1) push('margin', 'Margin factor below 1× prepares less than you need.', 'warn');
+  if (p.margin < 1) push('margin', 'Transfection-mix margin below 1× prepares less than you need.', 'warn');
+  if (p.cellSuspensionMargin < 1) push('cell-margin', 'Cell-suspension margin below 1× prepares less than you need.', 'warn');
   if (p.optimem_ul_per_well <= 0) push('optimem', 'OptiMEM per well must be greater than 0.', 'warn');
 
   const per = perCondition(p);

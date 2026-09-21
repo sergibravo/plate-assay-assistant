@@ -126,7 +126,7 @@ describe('substrate inside the experiment', () => {
     const sub = r.recipes.find((x) => x.id === 'substrate')!;
     // it starts from the ready-made buffer, which already carries both
     expect(sub.fromReadyBuffer).toBe(true);
-    expect(sub.baseName).toMatch(/ready-made/);
+    expect(sub.baseName).toMatch(/batch/);
     // within the noise floor of target, the substrate stock having displaced ~1 %
     expect(Math.abs(1 - sub.achievedDmso / r.target)).toBeLessThan(0.02);
     expect(Math.abs(1 - sub.achievedBsa / 0.0001)).toBeLessThan(0.02);
@@ -186,5 +186,61 @@ describe('substrate inside the experiment', () => {
     const sub = r.recipes.find((x) => x.id === 'substrate')!;
     expect(sub.prepare_ul).toBe(2000);
     expect(sub.components[0].volume_ul).toBeCloseTo(20, 9); // 2000 / 100
+  });
+});
+
+describe('premix presentation', () => {
+  const blocks: CompoundBlock[] = [
+    { id: 'b', name: 'Nebi', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
+      vehicle: 'DMSO', margin: 1, excludeFromVehicleMatch: false, logM: [-5, -6], stockBsaPct: null, notes: '' },
+  ];
+  const base = (over: Partial<DilutionExperiment> = {}): DilutionExperiment => ({
+    assayType: 'NanoBiT/BRET',
+    dmsoOverride: null,
+    addition: { compound_ul: 10, assayBuffer_ul: 80 },
+    dmsoPlacement: 'compound-only',
+    premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
+    substrate: defaultSubstrate('NanoBiT/BRET'),
+    blocks,
+    bsa: { enabled: true, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' },
+    bufferNotes: '',
+    ...over,
+  });
+
+  it('names a buffer by what is in it, never just "assay buffer"', () => {
+    const r = computeDilutions(base());
+    const batch = r.recipes.find((x) => x.id === 'assay-buffer')!;
+    expect(batch.name).toMatch(/0\.01 % BSA/);
+    expect(batch.baseName).toBe('plain assay buffer');
+    expect(r.recipes.find((x) => x.id === 'substrate')!.baseName).toMatch(/0\.01 % BSA/);
+  });
+
+  it('a portion poured off the batch is an allocation, not another preparation', () => {
+    const r = computeDilutions(base());
+    const well = r.recipes.find((x) => x.id === 'well')!;
+    expect(well.isPlainDraw).toBe(true);
+    // the DMSO diluent has DMSO added, so it is a preparation
+    expect(r.recipes.find((x) => x.id === 'dmso')!.isPlainDraw).toBe(false);
+    // and the substrate has its own stocks
+    expect(r.recipes.find((x) => x.id === 'substrate')!.isPlainDraw).toBe(false);
+  });
+
+  it('the batch covers every portion drawn from it', () => {
+    const r = computeDilutions(base());
+    const batch = r.recipes.find((x) => x.id === 'assay-buffer')!;
+    const drawn = r.recipes.filter((x) => x.fromReadyBuffer).reduce((a, x) => a + x.base_ul, 0);
+    expect(batch.prepare_ul).toBeGreaterThanOrEqual(drawn);
+  });
+
+  it('BSA only in the compounds: the batch is plain and the compound diluents add their own', () => {
+    const r = computeDilutions(base({ bsa: { enabled: true, targetPct: 0.01, stockPct: 5, placement: 'compound-only' } }));
+    const batch = r.recipes.find((x) => x.id === 'assay-buffer')!;
+    expect(batch.name).toMatch(/plain assay buffer/i);
+    const well = r.recipes.find((x) => x.id === 'well')!;
+    expect(well.isPlainDraw).toBe(true); // just a portion of the plain batch
+    expect(well.achievedBsa).toBe(0);
+    const normal = r.recipes.find((x) => x.id === 'normal')!;
+    expect(normal.bsaStock_ul).toBeGreaterThan(0); // BSA added here instead
+    expect(normal.achievedBsa).toBeCloseTo(0.0001, 9);
   });
 });

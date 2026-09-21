@@ -59,6 +59,8 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
   };
 
   const pct = (x: number) => `${round(x * 100, 4)} %`;
+  /** Portions of the batch that need nothing added — shown as allocations, not preparations. */
+  const draws = result.recipes.filter((r) => r.isPlainDraw && r.required_ul > 0);
 
   return (
     <>
@@ -347,18 +349,16 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                   step={0.001}
                   onChange={(v) => setExp({ bsa: { ...exp.bsa, targetPct: v } })}
                 />
-                <div className="field">
+                <div className="stacked-field">
                   <label>…in</label>
-                  <div style={{ gridColumn: '2 / span 2' }}>
-                    <Segmented
-                      value={exp.bsa.placement}
-                      options={[
-                        { value: 'all-buffers' as Placement, label: 'every buffer' },
-                        { value: 'compound-only' as Placement, label: 'only the compound' },
-                      ]}
-                      onChange={(v) => setExp({ bsa: { ...exp.bsa, placement: v } })}
-                    />
-                  </div>
+                  <Segmented
+                    value={exp.bsa.placement}
+                    options={[
+                      { value: 'all-buffers' as Placement, label: 'every buffer' },
+                      { value: 'compound-only' as Placement, label: 'only the compound' },
+                    ]}
+                    onChange={(v) => setExp({ bsa: { ...exp.bsa, placement: v } })}
+                  />
                 </div>
                 <NumField
                   label="BSA stock"
@@ -394,56 +394,85 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                 </tr>
               </thead>
               <tbody>
-                {result.recipes.map((r) => (
-                  <tr key={r.id}>
-                    <td>
-                      {r.name}
-                      <em className="sub" style={{ display: 'block' }}>from {r.baseName}</em>
-                    </td>
-                    <td className="num">{fmtVol(r.required_ul, 1)}</td>
-                    <td className="input">
-                      <input
-                        type="number"
-                        step="any"
-                        placeholder={String(r.suggested_ul)}
-                        title={r.overridden ? `Clear to go back to the suggested ${r.suggested_ul} µl` : 'Suggested — type a different volume to prepare more'}
-                        value={exp.premixOverrides[r.id] ?? ''}
-                        onChange={(e) =>
-                          setExp({
-                            premixOverrides: {
-                              ...exp.premixOverrides,
-                              [r.id]: e.target.value === '' ? null : Number(e.target.value),
-                            },
-                          })
-                        }
-                      />
-                    </td>
-                    <td className="calc num">{fmtVol(r.base_ul, 2)}</td>
-                    <td className="calc num">{r.dmso_ul > 0 ? fmtVol(r.dmso_ul, 3) : '—'}</td>
-                    <td className="calc num">{r.bsaStock_ul > 0 ? fmtVol(r.bsaStock_ul, 3) : '—'}</td>
-                    <td className="calc num">
-                      {r.components.length > 0
-                        ? r.components.map((c) => `${c.name}: ${fmtVol(c.volume_ul, 3)}`).join(' · ')
-                        : '—'}
-                    </td>
-                  </tr>
-                ))}
+                {result.recipes
+                  .filter((r) => !r.isPlainDraw)
+                  .map((r) => (
+                    <tr key={r.id}>
+                      <td>
+                        {r.name}
+                        <em className="sub" style={{ display: 'block' }}>from {r.baseName}</em>
+                      </td>
+                      <td className="num">{fmtVol(r.required_ul, 1)}</td>
+                      <td className="input">
+                        <input
+                          type="number"
+                          step="any"
+                          placeholder={String(r.suggested_ul)}
+                          title={r.overridden ? `Clear to go back to the suggested ${r.suggested_ul} µl` : 'Suggested — type a different volume to prepare more'}
+                          value={exp.premixOverrides[r.id] ?? ''}
+                          onChange={(e) =>
+                            setExp({
+                              premixOverrides: {
+                                ...exp.premixOverrides,
+                                [r.id]: e.target.value === '' ? null : Number(e.target.value),
+                              },
+                            })
+                          }
+                        />
+                      </td>
+                      <td className="calc num">{fmtVol(r.base_ul, 2)}</td>
+                      <td className="calc num">{r.dmso_ul > 0 ? fmtVol(r.dmso_ul, 3) : '—'}</td>
+                      <td className="calc num">{r.bsaStock_ul > 0 ? fmtVol(r.bsaStock_ul, 3) : '—'}</td>
+                      <td className="calc num">
+                        {r.components.length > 0
+                          ? r.components.map((c) => `${c.name}: ${fmtVol(c.volume_ul, 3)}`).join(' · ')
+                          : '—'}
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
+
+            {draws.length > 0 && (
+              <>
+                <h3 style={{ marginTop: 14 }}>Then pour off, no additions</h3>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Take from the batch</th>
+                      <th className="num">Needed (µl)</th>
+                      <th className="num">Take (µl)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {draws.map((r) => (
+                      <tr key={r.id}>
+                        <td>{r.name}</td>
+                        <td className="num">{fmtVol(r.required_ul, 1)}</td>
+                        <td className="calc num">{fmtVol(r.base_ul, 1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="hint">
+                  These are the same buffer, just portioned out — the batch above already includes
+                  them, so there is nothing extra to weigh or pipette.
+                </p>
+              </>
+            )}
+
             <p className="hint">
-              Work down the table: make the assay buffer batch first, then take from it for each
-              of the others. The suggestion is always rounded up — buffers are cheap and running
-              short mid-prep is not — and raised further when a small DMSO or BSA addition would
-              otherwise be unpipettable. <strong>Type over it</strong> to prepare a different
-              volume; the additions are recalculated for whatever you enter, and clearing the
-              cell returns to the suggestion.
+              Work down the first table, then pour off the rest. Volumes are always rounded up —
+              buffers are cheap and running short mid-prep is not — and raised further when a small
+              DMSO or BSA addition would otherwise be unpipettable. <strong>Type over</strong> a
+              Prepare cell for a different volume; clearing it returns to the suggestion.
             </p>
             {result.recipes.some((r) => r.leftShortFor.length > 0 || r.correctedFor.length > 0) && (
               <p className="hint">
-                Stocks added to a ready-made buffer displace a little of its carrier. Where that
-                is under {round(NEGLIGIBLE_RELATIVE * 100, 0)} % it is reported and left alone —
-                a correction that small is less accurate than the error it removes; beyond that
-                the app tops it up. Either way the messages at the top say what happened.
+                Stocks added to a ready-made buffer displace a little of its carrier. Under{' '}
+                {round(NEGLIGIBLE_RELATIVE * 100, 0)} % that is reported and left alone — a
+                correction that small is less accurate than the error it removes; beyond it the app
+                tops the buffer up. Either way the messages at the top say what happened.
               </p>
             )}
           </div>

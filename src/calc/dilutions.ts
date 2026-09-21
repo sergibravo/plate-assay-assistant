@@ -149,6 +149,11 @@ export interface DiluentRecipe {
   /** Carrier left slightly off target because correcting it is inside pipetting error. */
   leftShortFor: { name: string; achieved: number; target: number }[];
   /**
+   * Nothing is added to it: this is simply a portion of the batch, poured off. Shown as an
+   * allocation rather than as another thing to prepare.
+   */
+  isPlainDraw: boolean;
+  /**
    * Why `prepare_ul` is above `required_ul`: always rounding up (buffers are cheap), and
    * sometimes scaling further so a small additive clears the pipetting minimum.
    * Empty when the user set the volume themselves.
@@ -461,6 +466,17 @@ function computeBlock(block: CompoundBlock, factor: number, target: number, bsaF
 }
 
 /**
+ * Name a buffer by what is in it. "assay buffer" alone is ambiguous once some of it carries
+ * BSA and some does not, and that ambiguity is exactly what gets mixed up at the bench.
+ */
+export function bufferName(diluent: string, bsaFrac: number, dmsoFrac: number): string {
+  const parts: string[] = [];
+  if (bsaFrac > 0) parts.push(`${round(bsaFrac * 100, 4)} % BSA`);
+  if (dmsoFrac > 0) parts.push(`${round(dmsoFrac * 100, 4)} % DMSO`);
+  return parts.length > 0 ? `${diluent} + ${parts.join(' + ')}` : `plain ${diluent}`;
+}
+
+/**
  * Buffers are cheap and running out mid-prep is not, so a premix is always rounded *up* to
  * a volume someone would actually measure out.
  */
@@ -573,9 +589,11 @@ function recipe(args: {
   }
 
   const final = achieved();
+  const componentsAdded = components.length > 0;
   return {
     id,
     name,
+    isPlainDraw: fromReadyBuffer && dmso_ul === 0 && bsaStock_ul === 0 && !componentsAdded,
     required_ul: required,
     prepare_ul: prepare,
     suggested_ul: suggested,
@@ -583,7 +601,9 @@ function recipe(args: {
     dmso_ul,
     bsaStock_ul,
     components,
-    baseName: fromReadyBuffer ? `ready-made ${diluentName}` : `plain ${diluentName}`,
+    baseName: fromReadyBuffer
+      ? `the ${bufferName(diluentName, carriedBsa, carriedDmso)} batch`
+      : `plain ${diluentName}`,
     base_ul: Math.max(0, prepare - dmso_ul - bsaStock_ul - componentVolume),
     fromReadyBuffer,
     achievedBsa: final.bsa,
@@ -692,6 +712,7 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
   const readyBsa = wellBsa;
   const readyDmso = wellDmso;
   const common = { readyBsa, readyDmso, bsaStockPct, diluentName: assay.diluent };
+  const batchName = bufferName(assay.diluent, readyBsa, readyDmso);
 
   // Sized first, because the component stock volumes depend on the volume prepared.
   const substrateSizing = recipe({
@@ -712,9 +733,9 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
   });
 
   const downstream = [
-    recipe({ ...common, id: 'normal', name: assay.normalBufferName, required: totalNormalBuffer_ul, needDmso: 0, needBsa: bsaFrac, override: ov.normal }),
-    recipe({ ...common, id: 'dmso', name: assay.dmsoBufferName, required: totalDmsoBuffer_ul, needDmso: target, needBsa: bsaFrac, override: ov.dmso }),
-    recipe({ ...common, id: 'well', name: 'Well buffer (added before compounds)', required: wellBufferVolume(exp), needDmso: wellDmso, needBsa: wellBsa, override: ov.well }),
+    recipe({ ...common, id: 'normal', name: `For the compounds — ${bufferName(assay.diluent, bsaFrac, 0)}`, required: totalNormalBuffer_ul, needDmso: 0, needBsa: bsaFrac, override: ov.normal }),
+    recipe({ ...common, id: 'dmso', name: `For the compounds — ${bufferName(assay.diluent, bsaFrac, target)}`, required: totalDmsoBuffer_ul, needDmso: target, needBsa: bsaFrac, override: ov.dmso }),
+    recipe({ ...common, id: 'well', name: 'For the wells (before compounds)', required: wellBufferVolume(exp), needDmso: wellDmso, needBsa: wellBsa, override: ov.well }),
     ...(substrateSettings.enabled
       ? [
           recipe({
@@ -736,7 +757,7 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
   const assayBufferRecipe = recipe({
     ...common,
     id: 'assay-buffer',
-    name: `Assay buffer batch (${assay.diluent})`,
+    name: `${batchName[0].toUpperCase()}${batchName.slice(1)} — the batch`,
     required: readyBufferNeeded,
     needDmso: readyDmso,
     needBsa: readyBsa,

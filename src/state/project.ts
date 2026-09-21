@@ -14,7 +14,7 @@ import type {
   TransfectionParams,
 } from '../calc/types';
 
-export const PROJECT_VERSION = 3 as const;
+export const PROJECT_VERSION = 4 as const;
 
 export interface Project {
   version: typeof PROJECT_VERSION;
@@ -195,6 +195,7 @@ export function newProject(name = 'Untitled experiment'): Project {
     optimem_ul_per_well: 10,
     peiDnaRatio: 3,
     margin: 1.2,
+    cellSuspensionMargin: 1.3,
     cells_k_per_well: 30,
     dmem_ul_per_well: 100,
     plateFormat: '96-well',
@@ -244,6 +245,14 @@ export function migrate(raw: any): Project {
   if (p.version === 2) {
     // v3 adds the module 3 (dilutions) section.
     p.version = 3;
+  }
+  if (p.version === 3) {
+    // v4 splits the single margin into transfection mix and cell suspension. Carrying the
+    // old value over to both keeps every previously saved number exactly as it was.
+    if (p.transfection && p.transfection.cellSuspensionMargin === undefined) {
+      p.transfection = { ...p.transfection, cellSuspensionMargin: p.transfection.margin ?? 1.2 };
+    }
+    p.version = 4;
   }
   p.dnaStocks = (p.dnaStocks ?? []).map((s: any) => ({ plasmidId: '', notes: '', ...s }));
   // Fields added after a project was saved fall back to the previous behaviour.

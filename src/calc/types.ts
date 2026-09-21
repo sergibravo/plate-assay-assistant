@@ -63,14 +63,18 @@ export interface TransfectionParams {
   /** PEI:DNA ratio (w/w) — `Setup!C7`. */
   peiDnaRatio: number;
   /**
-   * Excess factor for the shared master mixes — `Setup!C8`.
-   *
-   * Applied to the PEI master mix, the OptiMEM that goes with it, and the cell
-   * suspension (DMEM + cells), so pipetting losses don't leave the last condition
-   * short. It is NOT applied to the per-condition DNA volumes: those stay at 1×
+   * Excess factor for the **transfection master mix** — PEI and the OptiMEM that goes with
+   * it. `Setup!C8`. It is NOT applied to the per-condition DNA volumes: those stay at 1×
    * (the sheet shows "Total DNA × margin" for reference only).
    */
   margin: number;
+  /**
+   * Excess factor for the **cell suspension** — DMEM and cells. Kept separate because more
+   * is routinely lost on the cell side (counting, settling, the volume left in the
+   * reservoir) than on the PEI side, so one shared margin either wasted PEI or left the
+   * last wells short of cells.
+   */
+  cellSuspensionMargin: number;
   /** Cells per well (thousands) — `Setup!F4` (the sheet stored millions; we store k). */
   cells_k_per_well: number;
   /** DMEM per well (µl) — `Setup!F5`. */

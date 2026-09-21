@@ -162,6 +162,22 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
 - A premix that needs *less* carrier than the batch holds cannot come from it, and falls back
   to plain buffer. Each row says which base it starts from, so the sheet is never ambiguous.
 
+## Corrections after first use (2026-09-21)
+
+- **The two master mixes get their own margins.** One shared margin meant either wasted PEI
+  or too little cell suspension, because the cell side loses more (counting, settling, dead
+  volume in the reservoir). Old projects carry their single margin into both, so nothing
+  computed before changes.
+- **The mouse wheel no longer edits numbers.** A focused `input[type=number]` changes value
+  when the wheel passes over it, so picking a stock concentration and then scrolling silently
+  shifted it by a unit or two. A global listener drops focus on wheel instead.
+- **Buffers are named by their contents** in every recipe and on the bench sheet. "Assay
+  buffer" alone was ambiguous the moment some of it carried BSA and some did not.
+- **A premix that needs nothing added is an allocation, not a preparation.** The well buffer
+  was appearing as a third thing to make when it is simply part of the batch poured off. The
+  table now separates "prepare, in this order" from "then pour off, no additions", and the
+  batch total already includes the poured portions.
+
 ## Open / deferred
 
 - Deeper UI polish (keyboard navigation, sidebar, density) waits until modules 2 and 3 exist,

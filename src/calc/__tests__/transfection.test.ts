@@ -19,6 +19,7 @@ const SHEET_PARAMS: TransfectionParams = {
   optimem_ul_per_well: 10, // Setup!C6
   peiDnaRatio: 3, // Setup!C7
   margin: 1.2, // Setup!C8
+  cellSuspensionMargin: 1.2, // the sheet used one margin for both sides
   cells_k_per_well: 30, // Setup!F4 (sheet stored 0.03 M = 30 k)
   dmem_ul_per_well: 100, // Setup!F5
   plateFormat: '96-well',
@@ -289,5 +290,29 @@ describe('plate formats', () => {
   it('half-area 96-well shares the 8 × 12 footprint', () => {
     expect(PLATE_GEOMETRY['half-area 96-well']).toEqual(PLATE_GEOMETRY['96-well']);
     expect(PLATE_GEOMETRY['384-well'].rows * PLATE_GEOMETRY['384-well'].cols).toBe(384);
+  });
+});
+
+describe('separate margins for the two master mixes', () => {
+  it('the cell suspension can carry more excess than the PEI mix', () => {
+    const p = { ...SHEET_PARAMS, margin: 1.2, cellSuspensionMargin: 1.5 };
+    const m = masterMix(p, 8);
+    // PEI side unchanged from the sheet
+    expect(m.totalPei_ul).toBeCloseTo(34.56, 10);
+    expect(m.totalOptimemForPei_ul).toBeCloseTo(576, 10);
+    // cell side scaled by its own margin: 100 µl × 12 wells × 1.5 × 8
+    expect(m.dmemTotal_ul).toBeCloseTo(14400, 9);
+    expect(m.totalCells_k).toBeCloseTo(30 * 12 * 1.5 * 8, 9);
+  });
+
+  it('equal margins reproduce the sheet exactly', () => {
+    const m = masterMix({ ...SHEET_PARAMS, cellSuspensionMargin: 1.2 }, 8);
+    expect(m.dmemTotal_ul).toBeCloseTo(11520, 9);
+    expect(m.totalCells_k).toBeCloseTo(3456, 9);
+  });
+
+  it('flags a cell margin below 1×', () => {
+    const codes = validateParams({ ...SHEET_PARAMS, cellSuspensionMargin: 0.8 }).map((w) => w.code);
+    expect(codes).toContain('cell-margin');
   });
 });

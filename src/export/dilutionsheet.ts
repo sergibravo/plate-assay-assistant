@@ -115,7 +115,7 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
       { v: exp.bsa.enabled ? `BSA ${exp.bsa.stockPct} % (µl)` : 'BSA (µl)', s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
       { v: 'Other ingredients (µl)', s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
     ],
-    ...result.recipes.map((r): Row => [
+    ...result.recipes.filter((r) => !r.isPlainDraw).map((r): Row => [
       { v: `${r.name}${r.overridden ? ' (volume you set)' : ''} — from ${r.baseName}`, s: pipetteLabel() },
       { v: r.prepare_ul, s: pipette() },
       { v: round(r.base_ul, 2), s: pipette() },
@@ -124,7 +124,20 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
       { v: r.components.length > 0 ? r.components.map((c) => `${c.name}: ${round(c.volume_ul, 3)}`).join(' · ') : '—', s: pipette() },
     ]),
     [{ v: result.target > 0 ? `The DMSO diluent is ${result.assay.diluent} premixed at ${pct(result.target)} DMSO; the other carries none.` : 'No DMSO stocks: plain diluent throughout.', s: muted() }],
-    [{ v: 'Make the assay buffer batch first, then take from it for each of the others.', s: muted() }],
+    [{ v: 'Make the batch first, then take from it for each of the others.', s: muted() }],
+    ...(result.recipes.some((r) => r.isPlainDraw && r.required_ul > 0)
+      ? ([
+          [{ v: 'Then pour off, no additions:', s: { font: { bold: true } } }],
+          ...result.recipes
+            .filter((r) => r.isPlainDraw && r.required_ul > 0)
+            .map((r): Row => [
+              { v: r.name, s: label() },
+              { v: round(r.required_ul, 1), s: value() },
+              { v: round(r.base_ul, 1), s: pipette() },
+            ]),
+          [{ v: 'Same buffer, just portioned out — already counted in the batch above.', s: muted() }],
+        ] as Row[])
+      : []),
     ...result.recipes
       .filter((r) => r.leftShortFor.length > 0 || r.correctedFor.length > 0)
       .map((r): Row => [

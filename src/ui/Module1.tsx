@@ -61,11 +61,13 @@ export function Module1({ project, update }: { project: Project; update: (p: Pro
             <NumField label="DNA per well" unit="ng" value={p.dna_ng_per_well} onChange={(v) => setParam('dna_ng_per_well', v)} />
             <NumField label="OptiMEM per well" unit="µl" value={p.optimem_ul_per_well} onChange={(v) => setParam('optimem_ul_per_well', v)} />
             <NumField label="PEI:DNA ratio" unit="w/w" value={p.peiDnaRatio} onChange={(v) => setParam('peiDnaRatio', v)} />
-            <NumField label="Margin factor — master mixes" unit="×" value={p.margin} step={0.1} onChange={(v) => setParam('margin', v)} />
+            <NumField label="Margin — transfection mix" unit="×" value={p.margin} step={0.1} onChange={(v) => setParam('margin', v)} />
+            <NumField label="Margin — cell suspension" unit="×" value={p.cellSuspensionMargin} step={0.1} onChange={(v) => setParam('cellSuspensionMargin', v)} />
             <p className="hint">
-              Margin is the excess prepared for the <strong>shared master mixes</strong>: PEI, the
-              OptiMEM that goes with it, and the cell suspension (DMEM + cells). It is not applied
-              to the per-condition DNA volumes — those stay at 1×.
+              Two margins, because the two sides lose different amounts. The first is the excess
+              PEI and its OptiMEM; the second the excess DMEM and cells, where counting, settling
+              and what stays in the reservoir usually cost more. Neither applies to the
+              per-condition DNA volumes — those stay at 1×.
             </p>
           </div>
           <div>
@@ -173,7 +175,7 @@ export function Module1({ project, update }: { project: Project; update: (p: Pro
             <CalcField label="OptiMEM for PEI / condition" unit="µl" value={mix.optimemForPeiPerCondition_ul} />
           </div>
           <div>
-            <h3>Cell suspension</h3>
+            <h3>Cell suspension <span className="sub">at {p.cellSuspensionMargin}× margin</span></h3>
             <div className="pipette-box">
               <CalcField label="DMEM total" unit="µl" value={mix.dmemTotal_ul} strong />
               <CalcField label="Total cells needed" unit="k cells" value={mix.totalCells_k} decimals={1} strong hint={`= ${round(mix.totalCells_k / 1000, 4)} M`} />

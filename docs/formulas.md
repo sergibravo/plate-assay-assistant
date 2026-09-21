@@ -18,10 +18,10 @@ Sources:
 | OptiMEM for PEI (µl) | T `Setup!C27` | `(C6*C4)/2` | `perCondition` |
 | DMEM / condition (µl) | T `Setup!C28` | `F5*C4` | `perCondition` |
 | Cells / condition (k) | T `Setup!C29` | `F4*C4` | `perCondition` |
-| Total PEI (µl) | T `PEI Mix!C6` | `C5*C4*Setup!C8` | `masterMix` |
-| Total OptiMEM for PEI (µl) | T `PEI Mix!C8` | `C7*C4*Setup!C8` | `masterMix` |
-| DMEM total (µl) | T `PEI Mix!F4` | `Setup!F5*Setup!C4*Setup!C8*C4` | `masterMix` |
-| Total cells (k) | T `PEI Mix!F5` | `Setup!F4*Setup!C4*Setup!C8*C4` | `masterMix` |
+| Total PEI (µl) | T `PEI Mix!C6` | `C5*C4*margin` | `masterMix` |
+| Total OptiMEM for PEI (µl) | T `PEI Mix!C8` | `C7*C4*margin` | `masterMix` |
+| DMEM total (µl) | T `PEI Mix!F4` | `Setup!F5*Setup!C4*cellMargin*C4` | `masterMix` |
+| Total cells (k) | T `PEI Mix!F5` | `Setup!F4*Setup!C4*cellMargin*C4` | `masterMix` |
 | DNA row ng | T `DNA Mixes!E11` | `(Setup!C5*Setup!C4)*pct/100` | `computeCondition` |
 | DNA row µl | T `DNA Mixes!F11` | `ng / stockConc`, `—` if stock blank/0 | `computeCondition` |
 | OptiMEM in the DNA tube (`fixed`) | T `DNA Mixes!E20` | `Setup!C26` | `computeCondition` |
@@ -40,10 +40,12 @@ block A2 → 6 ng / 0.6 µl HiBiT, filler 99.5 % → 1194 ng / 1.194 µl, totals
   0.03 M/well; the app holds 30 k/well. All downstream cell numbers are in k, with the
   millions equivalent shown as a hint. Project files saved before this change are
   converted automatically (`migrate`, `src/state/project.ts`).
-- **Margin is defined explicitly.** It multiplies the *shared master mixes* only — PEI,
-  the OptiMEM that pairs with it, and the cell suspension (DMEM + cells). Per-condition
-  DNA volumes stay at 1×; "Total DNA × margin" is displayed for reference, exactly as the
-  sheet did, and is not used in any downstream volume.
+- **Two margins, not one.** `margin` multiplies the transfection mix (PEI + its OptiMEM);
+  `cellSuspensionMargin` multiplies the cell suspension (DMEM + cells), where counting,
+  settling and reservoir dead volume routinely cost more. The sheet had a single `Setup!C8`
+  for both, so a project saved before the split carries its old value into both and every
+  previous number is unchanged. Per-condition DNA volumes stay at 1×; "Total DNA × margin"
+  is displayed for reference, as the sheet did, and feeds no downstream volume.
 - **DNA stocks carry a lab ID** (`plasmidId`) alongside the name. It prints on the bench
   sheet next to every DNA line.
 - **The OptiMEM volume per DNA tube has two modes** (`optimemMode`): `fixed` reproduces the
@@ -128,6 +130,12 @@ in that order: the batch first, then each diluent taken from it plus whatever it
 A premix needing *less* carrier than the batch holds (a DMSO-free compound diluent when every
 buffer carries DMSO) cannot come from the batch and is built from plain buffer instead; the
 recipe says which base each row starts from.
+
+Every buffer is **named by what is in it** — "assay buffer + 0.01 % BSA", never a bare "assay
+buffer" — because that ambiguity is what gets mixed up at the bench. A premix that needs
+nothing added (`isPlainDraw`) is a portion of the batch rather than another preparation, and
+is listed separately as something to pour off; its volume is already inside the batch total,
+so there is no double counting.
 
 **Carrier displacement.** Stocks added afterwards displace buffer, so they dilute its carrier:
 12 µl of substrate stock in 1200 µl takes 0.0100 % BSA to 0.0099 %. The rule is

@@ -59,6 +59,19 @@ describe('enable / clear a condition', () => {
 });
 
 describe('project migration', () => {
+  it('gives a v3 project its own cell-suspension margin, unchanged from the old one', () => {
+    const v3 = {
+      version: 3,
+      name: 'old', createdAt: '', updatedAt: '', notes: '',
+      transfection: { cells_k_per_well: 30, optimemMode: 'fixed', margin: 1.4 },
+      dnaStocks: [], compounds: [],
+      grid: { cols: 1, rowGroups: 1, colLabels: [''], rowGroupLabels: [''], conditions: [[]] },
+    };
+    const m = migrate(v3) as any;
+    expect(m.version).toBe(PROJECT_VERSION);
+    expect(m.transfection.cellSuspensionMargin).toBe(1.4);
+  });
+
   it('splits the old "already in the well" into plain buffer plus the substrate', () => {
     const old = {
       version: 3,

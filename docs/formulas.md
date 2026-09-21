@@ -131,6 +131,11 @@ A premix needing *less* carrier than the batch holds (a DMSO-free compound dilue
 buffer carries DMSO) cannot come from the batch and is built from plain buffer instead; the
 recipe says which base each row starts from.
 
+**Plain buffer is not a preparation.** A row that ends up as plain buffer and nothing else
+(`isPlainBuffer`) comes out of the bottle on the shelf, so it is left off the recipe entirely;
+only `plainBuffer_ul` reports how much the run consumes, counted once — portions drawn from a
+batch consume the batch, not the bottle.
+
 Every buffer is **named by what is in it** — "assay buffer + 0.01 % BSA", never a bare "assay
 buffer" — because that ambiguity is what gets mixed up at the bench. A premix that needs
 nothing added (`isPlainDraw`) is a portion of the batch rather than another preparation, and

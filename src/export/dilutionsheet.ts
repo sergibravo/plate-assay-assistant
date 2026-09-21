@@ -115,7 +115,7 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
       { v: exp.bsa.enabled ? `BSA ${exp.bsa.stockPct} % (µl)` : 'BSA (µl)', s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
       { v: 'Other ingredients (µl)', s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
     ],
-    ...result.recipes.filter((r) => !r.isPlainDraw).map((r): Row => [
+    ...result.recipes.filter((r) => !r.isPlainDraw && !r.isPlainBuffer && r.required_ul > 0).map((r): Row => [
       { v: `${r.name}${r.overridden ? ' (volume you set)' : ''} — from ${r.baseName}`, s: pipetteLabel() },
       { v: r.prepare_ul, s: pipette() },
       { v: round(r.base_ul, 2), s: pipette() },
@@ -125,11 +125,18 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
     ]),
     [{ v: result.target > 0 ? `The DMSO diluent is ${result.assay.diluent} premixed at ${pct(result.target)} DMSO; the other carries none.` : 'No DMSO stocks: plain diluent throughout.', s: muted() }],
     [{ v: 'Make the batch first, then take from it for each of the others.', s: muted() }],
-    ...(result.recipes.some((r) => r.isPlainDraw && r.required_ul > 0)
+    ...(result.plainBuffer_ul > 0
+      ? ([[
+          { v: `Plus ${round(result.plainBuffer_ul, 0)} µl of plain ${result.assay.diluent} from the bottle`, s: label() },
+          { v: '', s: label() },
+          { v: 'nothing to prepare', s: muted() },
+        ]] as Row[])
+      : []),
+    ...(result.recipes.some((r) => r.isPlainDraw && !r.isPlainBuffer && r.required_ul > 0)
       ? ([
           [{ v: 'Then pour off, no additions:', s: { font: { bold: true } } }],
           ...result.recipes
-            .filter((r) => r.isPlainDraw && r.required_ul > 0)
+            .filter((r) => r.isPlainDraw && !r.isPlainBuffer && r.required_ul > 0)
             .map((r): Row => [
               { v: r.name, s: label() },
               { v: round(r.required_ul, 1), s: value() },

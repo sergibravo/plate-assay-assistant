@@ -244,3 +244,54 @@ describe('premix presentation', () => {
     expect(normal.achievedBsa).toBeCloseTo(0.0001, 9);
   });
 });
+
+describe('plain buffer is not a preparation', () => {
+  const blocks: CompoundBlock[] = [
+    { id: 'b', name: 'Iso', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
+      vehicle: 'aqueous', margin: 1, excludeFromVehicleMatch: false, logM: [-5, -6], stockBsaPct: null, notes: '' },
+  ];
+  const plain = (over: Partial<DilutionExperiment> = {}): DilutionExperiment => ({
+    assayType: 'NanoBiT/BRET',
+    dmsoOverride: null,
+    addition: { compound_ul: 10, assayBuffer_ul: 80 },
+    dmsoPlacement: 'compound-only',
+    premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
+    substrate: { ...defaultSubstrate('NanoBiT/BRET'), enabled: false },
+    blocks,
+    bsa: { enabled: false, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' },
+    bufferNotes: '',
+    ...over,
+  });
+
+  it('an all-aqueous run with no BSA has nothing to premix at all', () => {
+    const r = computeDilutions(plain());
+    expect(r.recipes.every((x) => x.isPlainBuffer)).toBe(true);
+    expect(r.plainBuffer_ul).toBeGreaterThan(0);
+  });
+
+  it('what comes off the shelf is counted once, not once per portion', () => {
+    const r = computeDilutions(plain());
+    const batch = r.recipes.find((x) => x.id === 'assay-buffer')!;
+    // the batch is the only thing built from the bottle; the rest are drawn from it
+    expect(r.plainBuffer_ul).toBeCloseTo(batch.base_ul, 9);
+    expect(r.recipes.filter((x) => !x.fromReadyBuffer)).toHaveLength(1);
+  });
+
+  it('with BSA, the batch becomes a real preparation and the bottle figure is its base', () => {
+    const r = computeDilutions(plain({ bsa: { enabled: true, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' } }));
+    const batch = r.recipes.find((x) => x.id === 'assay-buffer')!;
+    expect(batch.isPlainBuffer).toBe(false);
+    expect(batch.bsaStock_ul).toBeGreaterThan(0);
+    expect(r.plainBuffer_ul).toBeCloseTo(batch.base_ul, 9);
+    // the compound diluent is then a portion of that batch, not plain buffer
+    expect(r.recipes.find((x) => x.id === 'normal')!.isPlainBuffer).toBe(false);
+  });
+
+  it('a DMSO diluent is always a preparation, BSA or no BSA', () => {
+    const withDmso = computeDilutions(plain({
+      blocks: [{ ...blocks[0], vehicle: 'DMSO' }],
+    }));
+    expect(withDmso.recipes.find((x) => x.id === 'dmso')!.isPlainBuffer).toBe(false);
+    expect(withDmso.recipes.find((x) => x.id === 'normal')!.isPlainBuffer).toBe(true);
+  });
+});

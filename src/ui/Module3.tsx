@@ -59,8 +59,10 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
   };
 
   const pct = (x: number) => `${round(x * 100, 4)} %`;
-  /** Portions of the batch that need nothing added — shown as allocations, not preparations. */
-  const draws = result.recipes.filter((r) => r.isPlainDraw && r.required_ul > 0);
+  /** Things that actually need making up. Plain buffer comes out of the bottle, so it is not one. */
+  const toPrepare = result.recipes.filter((r) => !r.isPlainDraw && !r.isPlainBuffer && r.required_ul > 0);
+  /** Portions of a prepared batch that need nothing added — allocations, not preparations. */
+  const draws = result.recipes.filter((r) => r.isPlainDraw && !r.isPlainBuffer && r.required_ul > 0);
 
   return (
     <>
@@ -394,9 +396,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                 </tr>
               </thead>
               <tbody>
-                {result.recipes
-                  .filter((r) => !r.isPlainDraw)
-                  .map((r) => (
+                {toPrepare.map((r) => (
                     <tr key={r.id}>
                       <td>
                         {r.name}
@@ -432,6 +432,9 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                   ))}
               </tbody>
             </table>
+            {toPrepare.length === 0 && (
+              <p className="hint">Nothing to premix — every buffer here is plain {result.assay.diluent}.</p>
+            )}
 
             {draws.length > 0 && (
               <>
@@ -461,6 +464,12 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
               </>
             )}
 
+            {result.plainBuffer_ul > 0 && (
+              <p className="hint">
+                Plus <strong>{fmtVol(result.plainBuffer_ul, 0)} µl of plain {result.assay.diluent}</strong>{' '}
+                straight from the bottle — nothing to prepare, listed so you know what the run uses.
+              </p>
+            )}
             <p className="hint">
               Work down the first table, then pour off the rest. Volumes are always rounded up —
               buffers are cheap and running short mid-prep is not — and raised further when a small

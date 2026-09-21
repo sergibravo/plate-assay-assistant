@@ -154,6 +154,11 @@ export interface DiluentRecipe {
    */
   isPlainDraw: boolean;
   /**
+   * It is plain buffer and nothing else — poured from the bottle on the shelf. Nothing to
+   * prepare, so it is left off the recipe entirely and only counted in the total consumed.
+   */
+  isPlainBuffer: boolean;
+  /**
    * Why `prepare_ul` is above `required_ul`: always rounding up (buffers are cheap), and
    * sometimes scaling further so a small additive clears the pipetting minimum.
    * Empty when the user set the volume themselves.
@@ -276,6 +281,11 @@ export interface DilutionResult {
   totalDmsoBuffer_ul: number;
   /** How to make each diluent up, including BSA and DMSO. */
   recipes: DiluentRecipe[];
+  /**
+   * Plain buffer taken straight from the bottle across the whole experiment — nothing to
+   * prepare, but worth knowing before you start.
+   */
+  plainBuffer_ul: number;
   substrate: SubstrateResult;
   warnings: Warning[];
 }
@@ -594,6 +604,7 @@ function recipe(args: {
     id,
     name,
     isPlainDraw: fromReadyBuffer && dmso_ul === 0 && bsaStock_ul === 0 && !componentsAdded,
+    isPlainBuffer: final.bsa === 0 && final.dmso === 0 && !componentsAdded,
     required_ul: required,
     prepare_ul: prepare,
     suggested_ul: suggested,
@@ -826,6 +837,9 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
     totalNormalBuffer_ul,
     totalDmsoBuffer_ul,
     recipes,
+    // Anything drawn from the batch consumes the batch, not the bottle; only what is built
+    // from plain buffer (the batch itself included) comes off the shelf.
+    plainBuffer_ul: recipes.reduce((a, r) => a + (r.fromReadyBuffer ? 0 : r.base_ul), 0),
     substrate,
     warnings: [...warnings, ...substrate.warnings, ...blocks.flatMap((b) => b.warnings)],
   };

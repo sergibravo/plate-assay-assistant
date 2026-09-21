@@ -173,6 +173,9 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
   shifted it by a unit or two. A global listener drops focus on wheel instead.
 - **Buffers are named by their contents** in every recipe and on the bench sheet. "Assay
   buffer" alone was ambiguous the moment some of it carried BSA and some did not.
+- **Plain buffer is left off the recipe.** It lives in a large bottle and needs no making up,
+  so neither the batch (when nothing is added to it) nor a compound diluent that is just plain
+  buffer earns a row. One line reports the total the run takes off the shelf, counted once.
 - **A premix that needs nothing added is an allocation, not a preparation.** The well buffer
   was appearing as a third thing to make when it is simply part of the batch poured off. The
   table now separates "prepare, in this order" from "then pour off, no additions", and the

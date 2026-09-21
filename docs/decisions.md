@@ -191,9 +191,21 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
   that compound's panel heading, and the warnings name the field and the panel rather than
   just the number, because the value itself proved hard to find in a long page.
 
+## Deliberately not doing (2026-09-21)
+
+- **No reusable inventories.** The spec asked for DNA stocks, compounds and buffers persisted
+  across experiments; Sergi is content to type them per experiment. The unused `compounds`
+  field in the project file is the only leftover.
+- **No Duplicate button.** A replicate is handled by opening the project, renaming it in the
+  header and saving — the filename follows the name, so the parent file is untouched. Offered
+  and declined; the Save flow is enough.
+
 ## Open / deferred
 
 - Deeper UI polish (keyboard navigation, sidebar, density) waits until modules 2 and 3 exist,
   so navigation is designed once rather than three times.
 - Module 4 (plate-reader output reshaper) stays a stub with a clean seam until 1–3 are done.
-- DERET: the furimazine solution the compounds are diluted in is still not calculated.
+- **DERET is next.** The furimazine solution the compounds are diluted in is not calculated
+  yet. Before building it, three things need answering: what stock the furimazine comes from,
+  what working concentration it is diluted to, and whether the compounds are made up in
+  furimazine at every dilution step or only the final one.

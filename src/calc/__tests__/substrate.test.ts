@@ -92,7 +92,9 @@ describe('substrate inside the experiment', () => {
     dmsoOverride: null,
     addition: { compound_ul: 10, assayBuffer_ul: 80 },
     dmsoPlacement: 'compound-only',
-    wellBufferExtra_ul: 0,
+    wells: null,
+  wellBufferExtra_ul: 0,
+  vehicleChannel_ul: 0,
     premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
     substrate: defaultSubstrate('NanoBiT/BRET'),
     blocks: [block],
@@ -126,7 +128,9 @@ describe('substrate inside the experiment', () => {
     const r = computeDilutions(
       exp({
         dmsoPlacement: 'all-buffers',
-    wellBufferExtra_ul: 0,
+    wells: null,
+  wellBufferExtra_ul: 0,
+  vehicleChannel_ul: 0,
         bsa: { enabled: true, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' },
       }),
     );
@@ -147,7 +151,9 @@ describe('substrate inside the experiment', () => {
     const r = computeDilutions(
       exp({
         dmsoPlacement: 'all-buffers',
-    wellBufferExtra_ul: 0,
+    wells: null,
+  wellBufferExtra_ul: 0,
+  vehicleChannel_ul: 0,
         bsa: { enabled: true, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' },
       }),
     );
@@ -173,7 +179,9 @@ describe('substrate inside the experiment', () => {
       exp({
         substrate: heavy,
         dmsoPlacement: 'all-buffers',
-    wellBufferExtra_ul: 0,
+    wells: null,
+  wellBufferExtra_ul: 0,
+  vehicleChannel_ul: 0,
         bsa: { enabled: true, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' },
       }),
     );
@@ -211,7 +219,9 @@ describe('premix presentation', () => {
     dmsoOverride: null,
     addition: { compound_ul: 10, assayBuffer_ul: 80 },
     dmsoPlacement: 'compound-only',
-    wellBufferExtra_ul: 0,
+    wells: null,
+  wellBufferExtra_ul: 0,
+  vehicleChannel_ul: 0,
     premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
     substrate: defaultSubstrate('NanoBiT/BRET'),
     blocks,
@@ -270,7 +280,9 @@ describe('plain buffer is not a preparation', () => {
     dmsoOverride: null,
     addition: { compound_ul: 10, assayBuffer_ul: 80 },
     dmsoPlacement: 'compound-only',
-    wellBufferExtra_ul: 0,
+    wells: null,
+  wellBufferExtra_ul: 0,
+  vehicleChannel_ul: 0,
     premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
     substrate: { ...defaultSubstrate('NanoBiT/BRET'), enabled: false },
     blocks,

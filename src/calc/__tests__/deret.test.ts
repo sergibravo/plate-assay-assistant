@@ -86,7 +86,9 @@ describe('DERET inside the experiment', () => {
     // 50 µl of fluorescein buffer on the cells, then 50 µl of compound in the same buffer
     addition: { compound_ul: 50, assayBuffer_ul: 50 },
     dmsoPlacement: 'all-buffers',
-    wellBufferExtra_ul: 0,
+    wells: null,
+  wellBufferExtra_ul: 0,
+  vehicleChannel_ul: 0,
     premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
     substrate: { ...defaultSubstrate('DERET'), enabled: false },
     fluorescein: defaultFluorescein(),
@@ -167,7 +169,9 @@ describe('what sizes the buffer', () => {
     dmsoOverride: null,
     addition: { compound_ul: 50, assayBuffer_ul: 50 },
     dmsoPlacement: 'all-buffers',
-    wellBufferExtra_ul: 0,
+    wells: null,
+  wellBufferExtra_ul: 0,
+  vehicleChannel_ul: 0,
     premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
     substrate: { ...defaultSubstrate('DERET'), enabled: false },
     fluorescein: defaultFluorescein(),
@@ -225,7 +229,9 @@ describe('a substrate left switched on cannot leak into DERET', () => {
     dmsoOverride: null,
     addition: { compound_ul: 10, assayBuffer_ul: 80 },
     dmsoPlacement: 'compound-only',
-    wellBufferExtra_ul: 0,
+    wells: null,
+  wellBufferExtra_ul: 0,
+  vehicleChannel_ul: 0,
     premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
     // 50 µl/well, as if HiBiT defaults had been loaded before switching to DERET
     substrate: { ...defaultSubstrate('HiBiT'), enabled: true },
@@ -249,5 +255,76 @@ describe('a substrate left switched on cannot leak into DERET', () => {
     const deret = computeDilutions(exp('DERET'));
     expect(deret.recipes.some((r) => r.id === 'substrate')).toBe(false);
     expect(deret.blocks[0].rows[0].tubeConc_uM).toBeCloseTo(10 * 9, 9);
+  });
+});
+
+describe('sizing the buffer by the plate, and the vehicle channel', () => {
+  const block: CompoundBlock = {
+    id: 'b', name: 'Nebi', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
+    vehicle: 'DMSO', extraVolume_ul: 0, excludeFromVehicleMatch: false, logM: [-5, -6], stockBsaPct: null, notes: '',
+  };
+  const exp = (over: Partial<DilutionExperiment> = {}): DilutionExperiment => ({
+    assayType: 'DERET',
+    dmsoOverride: null,
+    addition: { compound_ul: 50, assayBuffer_ul: 50 },
+    dmsoPlacement: 'all-buffers',
+    wells: null,
+    wellBufferExtra_ul: 0,
+    vehicleChannel_ul: 0,
+    premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
+    substrate: { ...defaultSubstrate('DERET'), enabled: false },
+    fluorescein: defaultFluorescein(),
+    tb: defaultTb(),
+    blocks: [block],
+    bsa: { enabled: false, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' },
+    bufferNotes: '',
+    ...over,
+  });
+
+  it('a typed well count sizes the well buffer, whatever the series covers', () => {
+    const derived = computeDilutions(exp());
+    expect(derived.wellsBuffered).toBeCloseTo(derived.wellsCovered, 9); // 2 rows × 200 / 50 = 8
+
+    const typed = computeDilutions(exp({ wells: 96 }));
+    expect(typed.wellsBuffered).toBe(96);
+    expect(typed.wellsCovered).toBeCloseTo(8, 9); // unchanged — it still describes the series
+    expect(typed.recipes.find((r) => r.id === 'well')!.required_ul).toBeCloseTo(96 * 50, 9);
+  });
+
+  it('the breakdown says what the batch is for', () => {
+    const r = computeDilutions(exp({ wells: 96 }));
+    const batch = r.recipes.find((x) => x.id === 'assay-buffer')!;
+    const { wells_ul, compounds_ul, substrate_ul } = r.bufferUse;
+    expect(wells_ul).toBeCloseTo(r.recipes.find((x) => x.id === 'well')!.base_ul, 9);
+    expect(wells_ul + compounds_ul + substrate_ul).toBeLessThanOrEqual(batch.prepare_ul + 1e-9);
+    expect(compounds_ul).toBeGreaterThan(0);
+  });
+
+  it('vehicle alone is more of the compounds\' own diluent, and is not a compound', () => {
+    const without = computeDilutions(exp({ wells: 96 }));
+    const withVehicle = computeDilutions(exp({ wells: 96, vehicleChannel_ul: 300 }));
+
+    // it lands in the matched diluent, because it has to carry the same DMSO
+    expect(withVehicle.totalDmsoBuffer_ul).toBeCloseTo(without.totalDmsoBuffer_ul + 300, 9);
+    expect(withVehicle.totalNormalBuffer_ul).toBeCloseTo(without.totalNormalBuffer_ul, 9);
+    expect(withVehicle.bufferUse.vehicle_ul).toBe(300);
+
+    // and it never becomes a block at the bottom of the page
+    expect(withVehicle.blocks).toHaveLength(1);
+    expect(withVehicle.blocks.map((b) => b.name)).toEqual(['Nebi']);
+  });
+
+  it('with nothing to match, vehicle alone is just plain diluent', () => {
+    const aqueous = { ...block, vehicle: 'aqueous' as const };
+    const r = computeDilutions(exp({ wells: 96, blocks: [aqueous], vehicleChannel_ul: 300, dmsoPlacement: 'compound-only' }));
+    expect(r.target).toBe(0);
+    expect(r.totalNormalBuffer_ul).toBeGreaterThanOrEqual(300);
+    expect(r.totalDmsoBuffer_ul).toBe(0);
+  });
+
+  it('the fluorescein grows with the vehicle channel, since it is more buffer', () => {
+    const without = computeDilutions(exp({ wells: 96 }));
+    const withVehicle = computeDilutions(exp({ wells: 96, vehicleChannel_ul: 3000 }));
+    expect(withVehicle.fluorescein.intoBuffer!.stock_ul).toBeGreaterThan(without.fluorescein.intoBuffer!.stock_ul);
   });
 });

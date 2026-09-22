@@ -91,6 +91,9 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
     param('DMSO in every tube', pct(result.target)),
     param('DMSO in the well', pct(result.inWellDmso), exp.dmsoPlacement === 'all-buffers' ? 'every buffer carries it' : `after the ${round(result.additionFactor, 3)}× addition`),
     param('Set by', exp.dmsoOverride !== null ? 'a forced value' : result.computedTarget > 0 ? 'the worst DMSO stock' : 'no DMSO stocks in use'),
+    ...(result.bufferUse.vehicle_ul > 0
+      ? [param('Vehicle alone', `${round(result.bufferUse.vehicle_ul, 1)} µl`, result.target > 0 ? 'prepared as DMSO diluent' : 'prepared as plain diluent')]
+      : []),
     param(
       'The well',
       `${exp.addition.assayBuffer_ul} µl buffer + ${result.substrate.enabled ? `${exp.substrate.volumePerWell_ul} µl substrate + ` : ''}${exp.addition.compound_ul} µl compound`,
@@ -191,6 +194,16 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
         ]);
       }
       rows.push([{ v: `The batch below is that ${round(f.target_uM, 1)} µM fluorescein buffer; every compound diluent is drawn from it.`, s: muted() }]);
+      rows.push(
+        param(`  on the cells — ${round(result.wellsBuffered, 1)} wells × ${round(exp.addition.assayBuffer_ul, 1)} µl`, round(result.bufferUse.wells_ul, 1), 'µl'),
+        param(
+          result.bufferUse.vehicle_ul > 0
+            ? `  for the compounds (vehicle alone included: ${round(result.bufferUse.vehicle_ul, 1)} µl)`
+            : '  for the compounds',
+          round(result.bufferUse.compounds_ul, 1),
+          'µl',
+        ),
+      );
     }
   }
 

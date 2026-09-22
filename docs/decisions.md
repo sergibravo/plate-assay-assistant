@@ -229,7 +229,14 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
 - **Fluorescein stocks are entered in mM**, since 100 mM and 1 mM are how they are labelled;
   the working concentration stays in µM. The engine holds µM throughout and the panel
   converts.
-- **Well counts are derived, not typed.** Each step prepares `volForWells` µl and each well
+- **Well counts are derived *or* typed.** The count the series covers is always shown, and a
+  typed count overrides it — the plate is what you know, and a series rarely fills it exactly.
+- **Vehicle alone is a volume, not a compound.** It goes into wells like a compound does, so
+  it is prepared as more of the matched diluent and counted in every buffer total, but it has
+  no dilution series and never appears as a block at the bottom of the page.
+- **The fluorescein panel says what the batch is for** — cells versus compounds, needed
+  versus drawn — because "prepare 13 ml" invites the question of where it all goes.
+- (superseded) Well counts were derived, not typed. Each step prepares `volForWells` µl and each well
   takes the addition volume, so the count falls out of the series — shown read-only. Wells
   the compounds never reach are added as extra well buffer, in µl, like every other excess.
   Terbium keeps its own well count because it labels cells before any compound exists.

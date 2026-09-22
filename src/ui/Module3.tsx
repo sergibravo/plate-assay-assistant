@@ -125,6 +125,17 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
             <CalcField label="= well volume" unit="µl" value={wellVolume} decimals={1} />
             <CalcField label="= compound diluted by" unit="×" value={result.additionFactor} decimals={3} strong />
             <CalcField label="= wells the series covers" unit="wells" value={result.wellsCovered} decimals={1} />
+            <div className="field">
+              <label>Wells to fill</label>
+              <input
+                type="number"
+                step="1"
+                placeholder={`${round(result.wellsCovered, 1)} (from the series)`}
+                value={exp.wells ?? ''}
+                onChange={(e) => setExp({ wells: e.target.value === '' ? null : Number(e.target.value) })}
+              />
+              <span className="unit">wells</span>
+            </div>
             <NumField
               label="Extra well buffer"
               unit="µl"
@@ -217,6 +228,18 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                 <>No compound uses a DMSO stock, so nothing needs matching — every tube is made up with plain {result.assay.diluent}.</>
               )}
             </p>
+            <NumField
+              label="Vehicle alone"
+              unit="µl"
+              value={exp.vehicleChannel_ul}
+              step={100}
+              onChange={(v) => setExp({ vehicleChannel_ul: v })}
+            />
+            <p className="hint">
+              Vehicle with no compound in it. It goes into wells like a compound does, so it is
+              prepared as more of {result.target > 0 ? 'the DMSO diluent' : 'the plain diluent'} —
+              but it has no dilution series, so it never appears as a compound below.
+            </p>
             <div className="field" style={{ gridTemplateColumns: '1fr' }}>
               <label style={{ marginBottom: 4 }}>Buffer recipes / notes (printed on the bench sheet)</label>
             </div>
@@ -249,6 +272,17 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
               </div>
               {fluo.enabled && (
                 <>
+                  <div className="field">
+                    <label>Wells to fill</label>
+                    <input
+                      type="number"
+                      step="1"
+                      placeholder={`${round(result.wellsCovered, 1)} (from the series)`}
+                      value={exp.wells ?? ''}
+                      onChange={(e) => setExp({ wells: e.target.value === '' ? null : Number(e.target.value) })}
+                    />
+                    <span className="unit">wells</span>
+                  </div>
                   <NumField label="Working concentration" unit="µM" value={fluo.target_uM} step={10} onChange={(v) => setExp({ fluorescein: { ...fluo, target_uM: v } })} />
                   <NumField label="Intermediate" unit="mM" value={round(fluo.intermediate_uM / 1000, 6)} step={0.5} onChange={(v) => setExp({ fluorescein: { ...fluo, intermediate_uM: v * 1000 } })} />
                   <NumField label="Freezer stock" unit="mM" value={round(fluo.stock_uM / 1000, 6)} step={10} onChange={(v) => setExp({ fluorescein: { ...fluo, stock_uM: v * 1000 } })} />
@@ -285,11 +319,47 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                       </tbody>
                     </table>
                   )}
+                  <h3 style={{ marginTop: 12 }}>What the fluorescein buffer is for</h3>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Goes to</th>
+                        <th className="num">Needed (µl)</th>
+                        <th className="num">Drawn (µl)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>The cells — {round(result.wellsBuffered, 1)} wells × {fmtVol(exp.addition.assayBuffer_ul, 1)} µl</td>
+                        <td className="num">{fmtVol(result.recipes.find((r) => r.id === 'well')?.required_ul ?? 0, 1)}</td>
+                        <td className="calc num">{fmtVol(result.bufferUse.wells_ul, 1)}</td>
+                      </tr>
+                      <tr>
+                        <td>
+                          The compounds
+                          {result.bufferUse.vehicle_ul > 0 ? `, vehicle alone included (${fmtVol(result.bufferUse.vehicle_ul, 1)} µl)` : ''}
+                        </td>
+                        <td className="num">
+                          {fmtVol(
+                            ['normal', 'dmso'].reduce((a, id) => a + (result.recipes.find((r) => r.id === id)?.required_ul ?? 0), 0),
+                            1,
+                          )}
+                        </td>
+                        <td className="calc num">{fmtVol(result.bufferUse.compounds_ul, 1)}</td>
+                      </tr>
+                      <tr className="total">
+                        <td>Batch prepared, rounded up</td>
+                        <td className="num" />
+                        <td className="num">
+                          {fmtVol(result.recipes.find((r) => r.id === 'assay-buffer')?.prepare_ul ?? 0, 1)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
                   <p className="hint">
-                    The batch below is that fluorescein buffer, and every compound diluent is drawn
-                    from it — so the acceptor is identical before and after the compounds go in. It
-                    makes up {round(result.fluorescein.volumeFractionOfBuffer * 100, 2)} % of the
-                    batch volume.
+                    Every compound diluent is drawn from that batch, so the acceptor is identical
+                    before and after the compounds go in. Leave <em>wells to fill</em> blank to let
+                    the compound series decide it ({round(result.wellsCovered, 1)} wells).
                   </p>
                 </>
               )}

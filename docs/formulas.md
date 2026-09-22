@@ -130,11 +130,15 @@ buffer's own recipe and the reported in-well figure.
 | Tb solution | `volumePerWell × wells + extra` — its own well count, unrelated to the assay's |
 | Tb stock | `volume ÷ dilution` (1:1000 by default), the rest diluent |
 
-Wells are never typed for the assay itself: each dilution step prepares `volForWells` µl and
-every well takes `compound_ul` of it, so `wellsCovered = Σ rows × volForWells ÷ compound_ul`
-falls out of the series. Wells the compounds never reach — buffer-only controls, a vehicle
-channel — are added as `wellBufferExtra_ul`. Terbium is the exception: it labels cells that
-may have nothing to do with the compound series, so it carries its own well count.
+The well buffer is sized either way round. `wellsCovered = Σ rows × volForWells ÷ compound_ul`
+always says what the compound series covers; setting `wells` overrides it with the plate you
+actually have, and `wellBufferExtra_ul` adds anything neither captures. Terbium keeps its own
+well count, since it labels cells before any compound exists.
+
+**Vehicle alone** (`vehicleChannel_ul`) is the compounds' diluent with no compound in it, so
+it is simply more of that diluent — DMSO buffer when anything is matched, plain buffer when
+nothing is. It has no dilution series, so it never becomes a block. `bufferUse` splits the
+batch into what goes to the cells, to the compounds (vehicle included) and to the substrate.
 
 Fluorescein goes into the **batch** every other diluent is drawn from, so the cells' buffer
 and the compound solutions carry it identically and the acceptor never changes when a

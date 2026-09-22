@@ -226,10 +226,18 @@ export interface DilutionExperiment {
   /** Whether the buffer already in the well carries DMSO too. */
   dmsoPlacement: Placement;
   /**
-   * Extra µl of well buffer beyond what the compound series implies — buffer-only controls,
-   * a vehicle channel, wells the compounds never reach.
+   * How many wells get buffer. `null` derives it from the compound series; set it when the
+   * plate is what you know — 96 wells, whatever the series happens to cover.
    */
+  wells: number | null;
+  /** Extra µl of well buffer on top, for anything the well count does not capture. */
   wellBufferExtra_ul: number;
+  /**
+   * Vehicle alone — buffer carrying the matched DMSO but no compound. It goes into wells
+   * like a compound does, so its volume is added to the diluent the compounds use, but it
+   * is not a compound: it has no dilution series and no block of its own.
+   */
+  vehicleChannel_ul: number;
   /**
    * Prepare more (or less) of a diluent than suggested. `null` = follow the suggestion.
    * Someone topping up a stock bottle, or wanting a round 5 ml, sets it here.
@@ -316,8 +324,17 @@ export interface DilutionResult {
    */
   plainBuffer_ul: number;
   substrate: SubstrateResult;
-  /** Wells the compound series covers — derived, never typed. */
+  /** Wells the compound series covers, whether or not a well count was typed. */
   wellsCovered: number;
+  /** Wells actually buffered: the typed count, or the derived one. */
+  wellsBuffered: number;
+  /** Where the batch goes. Useful for knowing what is for the cells and what for the compounds. */
+  bufferUse: {
+    wells_ul: number;
+    compounds_ul: number;
+    vehicle_ul: number;
+    substrate_ul: number;
+  };
   /** DERET only; inert for the other assays. */
   fluorescein: FluoresceinResult;
   tb: TbResult;
@@ -666,7 +683,13 @@ function recipe(args: {
 function wellBufferVolume(exp: DilutionExperiment): number {
   const { compound_ul, assayBuffer_ul } = exp.addition;
   const extra = Math.max(0, exp.wellBufferExtra_ul ?? 0);
-  if (compound_ul <= 0 || assayBuffer_ul <= 0) return extra;
+  if (assayBuffer_ul <= 0) return extra;
+
+  // An explicit well count wins: it is what the plate says, not what the series implies.
+  if (exp.wells !== null && exp.wells !== undefined) {
+    return Math.max(0, exp.wells) * assayBuffer_ul + extra;
+  }
+  if (compound_ul <= 0) return extra;
   const perStep = assayBuffer_ul / compound_ul;
   const forCompoundWells = exp.blocks.reduce((total, b) => {
     const rows = b.logM.filter((v) => v !== null && Number.isFinite(v)).length;
@@ -758,8 +781,15 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
     });
   }
 
-  const totalNormalBuffer_ul = blocks.reduce((a, b) => a + b.totalNormalBuffer_ul, 0);
-  const totalDmsoBuffer_ul = blocks.reduce((a, b) => a + b.totalDmsoBuffer_ul, 0);
+  /*
+   * Vehicle alone is the compounds' own diluent with no compound in it, so it is simply more
+   * of that diluent: DMSO buffer when anything is matched, plain buffer when nothing is.
+   */
+  const vehicle_ul = Math.max(0, exp.vehicleChannel_ul ?? 0);
+  const totalNormalBuffer_ul =
+    blocks.reduce((a, b) => a + b.totalNormalBuffer_ul, 0) + (target > 0 ? 0 : vehicle_ul);
+  const totalDmsoBuffer_ul =
+    blocks.reduce((a, b) => a + b.totalDmsoBuffer_ul, 0) + (target > 0 ? vehicle_ul : 0);
 
   if (exp.bsa.enabled) {
     if (exp.bsa.stockPct <= 0) {
@@ -940,6 +970,17 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
     plainBuffer_ul: recipes.reduce((a, r) => a + (r.fromReadyBuffer ? 0 : r.base_ul), 0),
     substrate,
     wellsCovered: wellsCovered(exp),
+    wellsBuffered:
+      exp.wells !== null && exp.wells !== undefined ? Math.max(0, exp.wells) : wellsCovered(exp),
+    bufferUse: {
+      wells_ul: recipes.find((r) => r.id === 'well')?.base_ul ?? 0,
+      compounds_ul: ['normal', 'dmso'].reduce(
+        (a, id) => a + (recipes.find((r) => r.id === id)?.base_ul ?? 0),
+        0,
+      ),
+      vehicle_ul,
+      substrate_ul: recipes.find((r) => r.id === 'substrate')?.base_ul ?? 0,
+    },
     fluorescein,
     tb,
     warnings: [

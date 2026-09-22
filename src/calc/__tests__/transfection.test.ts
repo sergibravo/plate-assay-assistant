@@ -332,3 +332,29 @@ describe('extra volumes rather than margins', () => {
     expect(codes).toContain('cell-extra');
   });
 });
+
+describe('OptiMEM comes out in whole µl', () => {
+  it('a split that lands on decimals is rounded up for the diluent, not the PEI', () => {
+    const m = masterMix({ ...SHEET_PARAMS, transfectionMixExtra_ul: 250 }, 8);
+    expect(Number.isInteger(m.totalOptimemForPei_ul)).toBe(true);
+    // 480 + 250 × (60/63.6) = 715.85 → 716
+    expect(m.totalOptimemForPei_ul).toBe(716);
+    // the PEI keeps its precision, because the ratio depends on it
+    expect(m.totalPei_ul).toBeCloseTo(3.6 * 8 + 250 * (3.6 / 63.6), 9);
+    expect(Number.isInteger(m.totalPei_ul)).toBe(false);
+  });
+
+  it('never rounds down, so the mix is never short', () => {
+    for (const extra of [0, 1, 37, 101.76, 999.9]) {
+      const m = masterMix({ ...SHEET_PARAMS, transfectionMixExtra_ul: extra }, 5);
+      const raw = 60 * 5 + extra * (60 / 63.6);
+      expect(m.totalOptimemForPei_ul).toBeGreaterThanOrEqual(raw - 1e-9);
+      expect(m.totalOptimemForPei_ul - raw).toBeLessThan(1);
+    }
+  });
+
+  it('leaves a whole figure alone', () => {
+    const m = masterMix(SHEET_PARAMS, 8); // the sheet's own case
+    expect(m.totalOptimemForPei_ul).toBe(576);
+  });
+});

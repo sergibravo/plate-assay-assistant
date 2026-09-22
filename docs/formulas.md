@@ -19,7 +19,7 @@ Sources:
 | DMEM / condition (µl) | T `Setup!C28` | `F5*C4` | `perCondition` |
 | Cells / condition (k) | T `Setup!C29` | `F4*C4` | `perCondition` |
 | Total PEI (µl) | T `PEI Mix!C6` | `C5*C4 + extra × (PEI share of the mix)` | `masterMix` |
-| Total OptiMEM for PEI (µl) | T `PEI Mix!C8` | `C7*C4 + extra × (OptiMEM share)` | `masterMix` |
+| Total OptiMEM for PEI (µl) | T `PEI Mix!C8` | `CEILING(C7*C4 + extra × (OptiMEM share), 1)` | `masterMix` |
 | DMEM total (µl) | T `PEI Mix!F4` | `Setup!F5*Setup!C4*C4 + cell extra` | `masterMix` |
 | Total cells (k) | T `PEI Mix!F5` | `Setup!F4*Setup!C4*C4 + cell extra × seeding density` | `masterMix` |
 | DNA row ng | T `DNA Mixes!E11` | `(Setup!C5*Setup!C4)*pct/100` | `computeCondition` |
@@ -40,6 +40,9 @@ block A2 → 6 ng / 0.6 µl HiBiT, filler 99.5 % → 1194 ng / 1.194 µl, totals
   0.03 M/well; the app holds 30 k/well. All downstream cell numbers are in k, with the
   millions equivalent shown as a hint. Project files saved before this change are
   converted automatically (`migrate`, `src/state/project.ts`).
+- **The OptiMEM for the PEI mix is rounded up to whole µl.** It is the diluent, so the
+  PEI:DNA ratio — which depends on the PEI volume alone — is untouched, while the number is
+  one a serological pipette can actually deliver. The PEI itself keeps its decimals.
 - **Excess is an amount, not a percentage**, everywhere: `transfectionMixExtra_ul`,
   `cellSuspensionExtra_ul`, a compound block's `extraVolume_ul` per tube, the substrate's and
   Tb's own extras. The mix extra keeps the PEI:OptiMEM ratio; the suspension extra carries

@@ -201,11 +201,13 @@ export function Module1({ project, update }: { project: Project; update: (p: Pro
             </div>
             <div className="pipette-box">
               <CalcField label="Total PEI" unit="µl" value={mix.totalPei_ul} strong />
-              <CalcField label="Total OptiMEM for PEI" unit="µl" value={mix.totalOptimemForPei_ul} strong />
+              <CalcField label="Total OptiMEM for PEI" unit="µl" value={mix.totalOptimemForPei_ul} decimals={0} strong />
             </div>
             <p className="hint">
               Pipette these two into one tube — {fmtVol(mix.totalPei_ul + mix.totalOptimemForPei_ul)} µl
               total: {gridResult.activeCount || 1} condition{gridResult.activeCount === 1 ? '' : 's'} plus {fmtVol(p.transfectionMixExtra_ul)} µl extra.
+              The OptiMEM is rounded up to whole µl — it is the diluent, so the PEI:DNA ratio is
+              untouched.
             </p>
             <CalcField label="PEI per condition" unit="µl" value={mix.peiPerCondition_ul} decimals={3} />
             <CalcField label="OptiMEM for PEI / condition" unit="µl" value={mix.optimemForPeiPerCondition_ul} />

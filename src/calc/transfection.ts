@@ -12,7 +12,7 @@ import type {
   TransfectionParams,
   Warning,
 } from './types';
-import { MIN_PIPETTE_UL } from './units';
+import { ceilingTo1, MIN_PIPETTE_UL } from './units';
 
 export interface PerConditionTotals {
   /** `Setup!C23 = C5*C4` */
@@ -52,7 +52,7 @@ export interface MasterMixTotals {
   totalPei_ul: number;
   /** `PEI Mix!C7` */
   optimemForPeiPerCondition_ul: number;
-  /** `PEI Mix!C8 = C7*C4*Setup!C8` */
+  /** Whole µl: OptiMEM is measured with a serological pipette, not to two decimals. */
   totalOptimemForPei_ul: number;
   /** `PEI Mix!F4 = Setup!F5*Setup!C4*C4`, at the cell-suspension margin. */
   dmemTotal_ul: number;
@@ -75,12 +75,18 @@ export function masterMix(p: TransfectionParams, nConditions: number): MasterMix
   const cellExtra = Math.max(0, p.cellSuspensionExtra_ul);
   const cellsPerUl = p.dmem_ul_per_well > 0 ? p.cells_k_per_well / p.dmem_ul_per_well : 0;
 
+  /*
+   * OptiMEM is rounded up to a whole µl. It is the diluent, not the reagent: the PEI:DNA
+   * ratio depends on the PEI volume alone, so a fraction of a µl more diluent changes
+   * nothing — while a figure like 576.32 µl is measured out as 576 anyway, and asks the
+   * person at the bench to do the rounding themselves.
+   */
   return {
     nConditions,
     peiPerCondition_ul: per.pei_ul,
     totalPei_ul: per.pei_ul * nConditions + extra * peiShare,
     optimemForPeiPerCondition_ul: per.optimemForPei_ul,
-    totalOptimemForPei_ul: per.optimemForPei_ul * nConditions + extra * (1 - peiShare),
+    totalOptimemForPei_ul: ceilingTo1(per.optimemForPei_ul * nConditions + extra * (1 - peiShare)),
     dmemTotal_ul: p.dmem_ul_per_well * p.wellsPerCondition * nConditions + cellExtra,
     totalCells_k: p.cells_k_per_well * p.wellsPerCondition * nConditions + cellExtra * cellsPerUl,
     cellSuspensionPerCondition_ul: p.dmem_ul_per_well * p.wellsPerCondition,

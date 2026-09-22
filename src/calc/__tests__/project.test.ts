@@ -6,6 +6,7 @@ import {
   enableCondition,
   migrate,
   newProject,
+  reconcileGrid,
   PROJECT_VERSION,
   removeColumn,
   removeRowGroup,
@@ -188,5 +189,39 @@ describe('project migration', () => {
     expect(m.dnaStocks[0].plasmidId).toBe('');
     expect(m.compounds).toEqual([]);
     expect(m.dilutions.blocks[0].logM.every((v: number | null) => v === null)).toBe(true);
+  });
+});
+
+describe('reordering the DNA inventory', () => {
+  it('moves the condition rows with it', () => {
+    const p = newProject();
+    const [a, b, c] = p.dnaStocks;
+    // move the filler (pcDNA, last) to the front
+    const reordered = [c, a, b];
+    const grid = reconcileGrid(p.grid, reordered);
+    for (const row of grid.conditions) {
+      for (const cond of row) {
+        expect(cond.entries.map((e) => e.dnaStockId)).toEqual([c.id, a.id, b.id]);
+      }
+    }
+  });
+
+  it('keeps every percentage with its own DNA', () => {
+    const p = newProject();
+    const [a, b, c] = p.dnaStocks;
+    const withPct = {
+      ...p.grid,
+      conditions: p.grid.conditions.map((row, r) =>
+        row.map((cond, col) =>
+          r === 0 && col === 0
+            ? { ...cond, entries: cond.entries.map((e) => (e.dnaStockId === a.id ? { ...e, pct: 0.5 } : e)) }
+            : cond,
+        ),
+      ),
+    };
+    const grid = reconcileGrid(withPct, [c, b, a]);
+    const first = grid.conditions[0][0].entries;
+    expect(first.find((e) => e.dnaStockId === a.id)!.pct).toBe(0.5);
+    expect(first.map((e) => e.dnaStockId)).toEqual([c.id, b.id, a.id]);
   });
 });

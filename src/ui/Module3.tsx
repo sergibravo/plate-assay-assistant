@@ -16,6 +16,11 @@ import { CalcField, ConfirmButton, Legend, NumField, Panel, Segmented, Warnings 
 const ASSAY_TYPES = Object.keys(ASSAY_PROFILES) as AssayType[];
 const VEHICLES: Vehicle[] = ['aqueous', 'DMSO'];
 
+/** µM, shown as mM once the numbers get large enough to read badly. */
+function fmtConc(uM: number): string {
+  return uM >= 1000 ? `${round(uM / 1000, 3)} mM` : `${round(uM, 3)} µM`;
+}
+
 /** Concentration shown next to the logM the user typed. */
 function concLabel(logM: number | null): string {
   if (logM === null || !Number.isFinite(logM)) return '';
@@ -116,7 +121,18 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
             />
             <CalcField label="= well volume" unit="µl" value={wellVolume} decimals={1} />
             <CalcField label="= compound diluted by" unit="×" value={result.additionFactor} decimals={3} strong />
+            <CalcField label="= wells the series covers" unit="wells" value={result.wellsCovered} decimals={1} />
+            <NumField
+              label="Extra well buffer"
+              unit="µl"
+              value={exp.wellBufferExtra_ul}
+              step={100}
+              onChange={(v) => setExp({ wellBufferExtra_ul: v })}
+            />
             <p className="hint">
+              The well count is not typed: each dilution step prepares its "vol for wells", and
+              every well takes {fmtVol(exp.addition.compound_ul, 1)} µl of it. Wells the compounds
+              never reach — buffer-only controls, a vehicle channel — go in as extra well buffer.
               Any of these may be 0 — 50 µl of compound into an empty well is a 1× addition.
               Each tube is prepared at {round(result.additionFactor, 3)}× the concentration you
               type, so the logM in the tables below is what the <strong>cells</strong> finally see.
@@ -231,8 +247,8 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
               {fluo.enabled && (
                 <>
                   <NumField label="Working concentration" unit="µM" value={fluo.target_uM} step={10} onChange={(v) => setExp({ fluorescein: { ...fluo, target_uM: v } })} />
-                  <NumField label="Intermediate" unit="µM" value={fluo.intermediate_uM} step={100} onChange={(v) => setExp({ fluorescein: { ...fluo, intermediate_uM: v } })} />
-                  <NumField label="Freezer stock" unit="µM" value={fluo.stock_uM} step={1000} onChange={(v) => setExp({ fluorescein: { ...fluo, stock_uM: v } })} />
+                  <NumField label="Intermediate" unit="mM" value={round(fluo.intermediate_uM / 1000, 6)} step={0.5} onChange={(v) => setExp({ fluorescein: { ...fluo, intermediate_uM: v * 1000 } })} />
+                  <NumField label="Freezer stock" unit="mM" value={round(fluo.stock_uM / 1000, 6)} step={10} onChange={(v) => setExp({ fluorescein: { ...fluo, stock_uM: v * 1000 } })} />
                   <NumField label="Extra intermediate" unit="µl" value={fluo.intermediateExtra_ul} step={10} onChange={(v) => setExp({ fluorescein: { ...fluo, intermediateExtra_ul: v } })} />
                   {result.fluorescein.intoBuffer && result.fluorescein.intermediate && (
                     <table style={{ marginTop: 8 }}>
@@ -247,7 +263,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                       <tbody>
                         <tr>
                           <td>
-                            {round(fluo.stock_uM / 1000, 1)} mM → {round(fluo.intermediate_uM, 1)} µM
+                            {fmtConc(fluo.stock_uM)} → {fmtConc(fluo.intermediate_uM)}
                             <em className="sub" style={{ display: 'block' }}>1:{round(result.fluorescein.intermediate.fold, 1)}</em>
                           </td>
                           <td className="calc num">{fmtVol(result.fluorescein.intermediate.prepare_ul, 1)}</td>
@@ -256,7 +272,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                         </tr>
                         <tr>
                           <td>
-                            {round(fluo.intermediate_uM, 1)} µM → {round(fluo.target_uM, 1)} µM buffer
+                            {fmtConc(fluo.intermediate_uM)} → {fmtConc(fluo.target_uM)} buffer
                             <em className="sub" style={{ display: 'block' }}>1:{round(result.fluorescein.intoBuffer.fold, 1)}, into the batch</em>
                           </td>
                           <td className="calc num">{fmtVol(result.fluorescein.intoBuffer.prepare_ul, 1)}</td>
@@ -308,6 +324,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
           </div>
         </Panel>
       )}
+      {exp.assayType !== 'DERET' && (
       <Panel
         title="Substrate"
         actions={
@@ -419,12 +436,11 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
         ) : (
           <p className="hint">
             No substrate prepared for this experiment.{' '}
-            {exp.assayType === 'DERET'
-              ? 'For DERET the compounds themselves are diluted in furimazine — that preparation is not calculated yet.'
-              : 'Switch it on to work out the volumes.'}
+            Switch it on to work out the volumes.
           </p>
         )}
       </Panel>
+      )}
 
       <Panel title="BSA carrier & premix recipe">
         <div className="grid-2">

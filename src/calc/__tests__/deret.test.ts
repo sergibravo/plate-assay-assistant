@@ -86,6 +86,7 @@ describe('DERET inside the experiment', () => {
     // 50 µl of fluorescein buffer on the cells, then 50 µl of compound in the same buffer
     addition: { compound_ul: 50, assayBuffer_ul: 50 },
     dmsoPlacement: 'all-buffers',
+    wellBufferExtra_ul: 0,
     premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
     substrate: { ...defaultSubstrate('DERET'), enabled: false },
     fluorescein: defaultFluorescein(),
@@ -153,5 +154,63 @@ describe('DERET inside the experiment', () => {
     expect(batch.components.some((c) => c.name.startsWith('Fluorescein'))).toBe(true);
     // the fluorescein displaces carrier like any other stock, and that is accounted for
     expect(batch.achievedBsa).toBeGreaterThan(0);
+  });
+});
+
+describe('what sizes the buffer', () => {
+  const block: CompoundBlock = {
+    id: 'b', name: 'Iso', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
+    vehicle: 'aqueous', extraVolume_ul: 0, excludeFromVehicleMatch: false, logM: [-5, -6], stockBsaPct: null, notes: '',
+  };
+  const exp = (over: Partial<DilutionExperiment> = {}): DilutionExperiment => ({
+    assayType: 'DERET',
+    dmsoOverride: null,
+    addition: { compound_ul: 50, assayBuffer_ul: 50 },
+    dmsoPlacement: 'all-buffers',
+    wellBufferExtra_ul: 0,
+    premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
+    substrate: { ...defaultSubstrate('DERET'), enabled: false },
+    fluorescein: defaultFluorescein(),
+    tb: defaultTb(),
+    blocks: [block],
+    bsa: { enabled: false, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' },
+    bufferNotes: '',
+    ...over,
+  });
+
+  it('the well count falls out of the series, it is never typed', () => {
+    // 2 rows × 200 µl, 50 µl into each well → 8 wells
+    expect(computeDilutions(exp()).wellsCovered).toBeCloseTo(8, 9);
+  });
+
+  it('buffer-only wells are added as a volume, and the fluorescein follows', () => {
+    const plain = computeDilutions(exp());
+    const withControls = computeDilutions(exp({ wellBufferExtra_ul: 2000 }));
+    const wellOf = (r: typeof plain) => r.recipes.find((x) => x.id === 'well')!.required_ul;
+    expect(wellOf(withControls)).toBeCloseTo(wellOf(plain) + 2000, 9);
+    // a bigger batch takes proportionally more fluorescein
+    expect(withControls.fluorescein.intoBuffer!.stock_ul).toBeGreaterThan(plain.fluorescein.intoBuffer!.stock_ul);
+    expect(withControls.fluorescein.volumeFractionOfBuffer).toBeCloseTo(plain.fluorescein.volumeFractionOfBuffer, 9);
+  });
+
+  it('the fluorescein covers the compound side and the wells together', () => {
+    const r = computeDilutions(exp({ wellBufferExtra_ul: 500 }));
+    const batch = r.recipes.find((x) => x.id === 'assay-buffer')!;
+    const drawn = r.recipes.filter((x) => x.fromReadyBuffer).reduce((a, x) => a + x.base_ul, 0);
+    expect(batch.prepare_ul).toBeGreaterThanOrEqual(drawn);
+    expect(r.fluorescein.intoBuffer!.prepare_ul).toBe(batch.prepare_ul);
+  });
+
+  it('changing the Tb well count does not touch the fluorescein', () => {
+    const a = computeDilutions(exp());
+    const b = computeDilutions(exp({ tb: { ...defaultTb(), wells: 384 } }));
+    expect(b.fluorescein.intoBuffer!.stock_ul).toBeCloseTo(a.fluorescein.intoBuffer!.stock_ul, 9);
+    expect(b.tb.required_ul).toBeGreaterThan(a.tb.required_ul);
+  });
+
+  it('DERET never prepares a substrate, even if one was left switched on', () => {
+    const r = computeDilutions(exp({ substrate: { ...defaultSubstrate('NanoBiT/BRET'), enabled: true } }));
+    expect(r.substrate.enabled).toBe(false);
+    expect(r.recipes.some((x) => x.id === 'substrate')).toBe(false);
   });
 });

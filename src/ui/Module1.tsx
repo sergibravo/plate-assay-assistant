@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { computeGrid, masterMix, perCondition, validateParams } from '../calc/transfection';
 import type { DnaStock, PlateFormat } from '../calc/types';
 import { fmtVol, round } from '../calc/units';
@@ -48,6 +48,18 @@ export function Module1({ project, update }: { project: Project; update: (p: Pro
 
   const colTemplate = `repeat(${grid.cols}, 246px)`;
   const fillerId = dnaStocks.find((s) => s.isFiller)?.id ?? null;
+
+  // Drag to reorder the inventory. The grid follows, because every condition's rows are
+  // rebuilt from the inventory order whenever the stocks change.
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const moveStock = (from: number, to: number) => {
+    if (from === to || to < 0 || to >= dnaStocks.length) return;
+    const next = [...dnaStocks];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setStocks(next);
+  };
 
   return (
     <>
@@ -99,6 +111,7 @@ export function Module1({ project, update }: { project: Project; update: (p: Pro
         <table>
           <thead>
             <tr>
+              <th className="no-print" style={{ width: 46 }} />
               <th style={{ width: 110 }}>ID</th>
               <th>DNA name</th>
               <th className="num">Stock conc. (ng/µl)</th>
@@ -109,7 +122,27 @@ export function Module1({ project, update }: { project: Project; update: (p: Pro
           </thead>
           <tbody>
             {dnaStocks.map((s, i) => (
-              <tr key={s.id}>
+              <tr
+                key={s.id}
+                className={dropIndex === i && dragIndex !== i ? 'drop-target' : ''}
+                onDragOver={(e) => { e.preventDefault(); setDropIndex(i); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (dragIndex !== null) moveStock(dragIndex, i);
+                  setDragIndex(null);
+                  setDropIndex(null);
+                }}
+              >
+                <td
+                  className="drag-cell no-print"
+                  draggable
+                  title="Drag to reorder — the condition rows follow"
+                  onDragStart={() => setDragIndex(i)}
+                  onDragEnd={() => { setDragIndex(null); setDropIndex(null); }}
+                >
+                  <span className="grip">⠿</span>
+                  <span className="rank">{i + 1}</span>
+                </td>
                 <td className="input">
                   <input style={{ textAlign: 'left' }} value={s.plasmidId} placeholder="ID" onChange={(e) => setStocks(dnaStocks.map((x, j) => (j === i ? { ...x, plasmidId: e.target.value } : x)))} />
                 </td>
@@ -137,16 +170,20 @@ export function Module1({ project, update }: { project: Project; update: (p: Pro
                     onChange={() => setStocks(dnaStocks.map((x, j) => ({ ...x, isFiller: j === i })))}
                   />
                 </td>
-                <td className="no-print">
-                  <button className="btn small" onClick={() => setStocks(dnaStocks.filter((_, j) => j !== i))} title="Remove">✕</button>
+                <td className="no-print" style={{ whiteSpace: 'nowrap' }}>
+                  <button className="btn small" disabled={i === 0} title="Move up" onClick={() => moveStock(i, i - 1)}>↑</button>{' '}
+                  <button className="btn small" disabled={i === dnaStocks.length - 1} title="Move down" onClick={() => moveStock(i, i + 1)}>↓</button>{' '}
+                  <ConfirmButton onConfirm={() => setStocks(dnaStocks.filter((_, j) => j !== i))} title="Remove this DNA stock">✕</ConfirmButton>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
         <p className="hint no-print">
-          The filler DNA (usually empty vector) tops every condition up to 100 %. Leave a stock
-          concentration blank if you don't know it — volumes then show “—” instead of a wrong number.
+          Drag a row by its handle (or use ↑ ↓) to reorder — the condition blocks below follow the
+          same order. The filler DNA (usually empty vector) tops every condition up to 100 %. Leave
+          a stock concentration blank if you don't know it — volumes then show “—” instead of a
+          wrong number.
         </p>
         <button className="btn no-print" onClick={() => setStocks([...dnaStocks, { id: uid('dna'), plasmidId: '', name: '', stockConc_ng_per_ul: null, notes: '', isFiller: false }])}>
           + Add DNA stock

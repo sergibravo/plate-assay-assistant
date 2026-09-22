@@ -174,6 +174,7 @@ export function emptyDilutions(): DilutionExperiment {
     dmsoOverride: null,
     addition: { compound_ul: 10, assayBuffer_ul: 80 },
     dmsoPlacement: 'compound-only',
+    wellBufferExtra_ul: 0,
     premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
     substrate: defaultSubstrate('NanoBiT/BRET'),
     fluorescein: defaultFluorescein(),
@@ -301,6 +302,7 @@ export function migrate(raw: any): Project {
   p.dilutions.bsa = { ...emptyDilutions().bsa, ...(p.dilutions.bsa ?? {}) };
   p.dilutions.premixOverrides = { ...emptyDilutions().premixOverrides, ...(p.dilutions.premixOverrides ?? {}) };
   p.dilutions.substrate = p.dilutions.substrate ?? defaultSubstrate(p.dilutions.assayType ?? 'NanoBiT/BRET');
+  p.dilutions.wellBufferExtra_ul = p.dilutions.wellBufferExtra_ul ?? 0;
   p.dilutions.fluorescein = { ...defaultFluorescein(), ...(p.dilutions.fluorescein ?? {}) };
   p.dilutions.tb = { ...defaultTb(), ...(p.dilutions.tb ?? {}) };
   // The addition used to be split between a global in-well factor and a per-block dilution

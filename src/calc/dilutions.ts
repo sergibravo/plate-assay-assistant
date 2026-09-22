@@ -216,6 +216,11 @@ export interface DilutionExperiment {
   /** Whether the buffer already in the well carries DMSO too. */
   dmsoPlacement: Placement;
   /**
+   * Extra µl of well buffer beyond what the compound series implies — buffer-only controls,
+   * a vehicle channel, wells the compounds never reach.
+   */
+  wellBufferExtra_ul: number;
+  /**
    * Prepare more (or less) of a diluent than suggested. `null` = follow the suggestion.
    * Someone topping up a stock bottle, or wanting a round 5 ml, sets it here.
    */
@@ -301,6 +306,8 @@ export interface DilutionResult {
    */
   plainBuffer_ul: number;
   substrate: SubstrateResult;
+  /** Wells the compound series covers — derived, never typed. */
+  wellsCovered: number;
   /** DERET only; inert for the other assays. */
   fluorescein: FluoresceinResult;
   tb: TbResult;
@@ -648,11 +655,26 @@ function recipe(args: {
  */
 function wellBufferVolume(exp: DilutionExperiment): number {
   const { compound_ul, assayBuffer_ul } = exp.addition;
-  if (compound_ul <= 0 || assayBuffer_ul <= 0) return 0;
+  const extra = Math.max(0, exp.wellBufferExtra_ul ?? 0);
+  if (compound_ul <= 0 || assayBuffer_ul <= 0) return extra;
   const perStep = assayBuffer_ul / compound_ul;
-  return exp.blocks.reduce((total, b) => {
+  const forCompoundWells = exp.blocks.reduce((total, b) => {
     const rows = b.logM.filter((v) => v !== null && Number.isFinite(v)).length;
     return total + rows * (b.volForWells_ul + Math.max(0, b.extraVolume_ul)) * perStep;
+  }, 0);
+  return forCompoundWells + extra;
+}
+
+/**
+ * How many wells the compound series covers. Nobody types a well count: each row prepares
+ * `volForWells` µl, and every well takes `compound_ul` of it, so the number falls out.
+ */
+export function wellsCovered(exp: DilutionExperiment): number {
+  const { compound_ul } = exp.addition;
+  if (compound_ul <= 0) return 0;
+  return exp.blocks.reduce((total, b) => {
+    const rows = b.logM.filter((v) => v !== null && Number.isFinite(v)).length;
+    return total + (rows * b.volForWells_ul) / compound_ul;
   }, 0);
 }
 
@@ -747,7 +769,10 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
   const wellDmso = exp.dmsoPlacement === 'all-buffers' ? target : 0;
 
   const ov = exp.premixOverrides ?? { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null };
-  const substrateSettings = exp.substrate ?? defaultSubstrate(exp.assayType);
+  // DERET has no substrate step, so it is not merely hidden in the UI: it is not computed.
+  const storedSubstrate = exp.substrate ?? defaultSubstrate(exp.assayType);
+  const substrateSettings =
+    exp.assayType === 'DERET' ? { ...storedSubstrate, enabled: false } : storedSubstrate;
 
   /*
    * What the one batch carries: only what *every* diluent drawn from it needs. BSA and
@@ -906,6 +931,7 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
     // from plain buffer (the batch itself included) comes off the shelf.
     plainBuffer_ul: recipes.reduce((a, r) => a + (r.fromReadyBuffer ? 0 : r.base_ul), 0),
     substrate,
+    wellsCovered: wellsCovered(exp),
     fluorescein,
     tb,
     warnings: [

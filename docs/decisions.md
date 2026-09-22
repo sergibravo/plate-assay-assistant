@@ -220,6 +220,20 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
   is washed out, so it is sized from the wells it labels and stays out of the well
   composition and the DMSO matching entirely.
 
+## DERET follow-ups (2026-09-22)
+
+- **DERET has no substrate section at all** — it is not merely hidden: a substrate left
+  switched on from another assay is ignored, so nothing invisible can reach the bench sheet.
+- **Fluorescein stocks are entered in mM**, since 100 mM and 1 mM are how they are labelled;
+  the working concentration stays in µM. The engine holds µM throughout and the panel
+  converts.
+- **Well counts are derived, not typed.** Each step prepares `volForWells` µl and each well
+  takes the addition volume, so the count falls out of the series — shown read-only. Wells
+  the compounds never reach are added as extra well buffer, in µl, like every other excess.
+  Terbium keeps its own well count because it labels cells before any compound exists.
+- **The DNA inventory can be reordered by dragging** (or ↑ ↓), and the condition blocks
+  follow, because every condition's rows are rebuilt from the inventory order.
+
 ## Open / deferred
 
 - Deeper UI polish (keyboard navigation, sidebar, density) waits until modules 2 and 3 exist,

@@ -196,6 +196,12 @@ tr.total td { font-weight: 600; background: #f4f6f9; }
 .cond-card th:last-child, .cond-card td:last-child { border-right: none; }
 .cond-card tr:last-child td { border-bottom: none; }
 
+.drag-cell { cursor: grab; user-select: none; white-space: nowrap; color: var(--muted); }
+.drag-cell:active { cursor: grabbing; }
+.drag-cell .grip { font-size: 13px; letter-spacing: -1px; }
+.drag-cell .rank { font-size: 11px; margin-left: 4px; }
+tr.drop-target td { border-top: 2px solid var(--accent); }
+
 .hint { color: var(--muted); font-size: 11.5px; margin: 4px 0 0; }
 .stub { color: var(--muted); padding: 48px; text-align: center; }
 

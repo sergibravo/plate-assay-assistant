@@ -127,8 +127,14 @@ buffer's own recipe and the reported in-well figure.
 | --- | --- |
 | Fluorescein into the buffer | `1:(intermediate ÷ target)`, so `batch ÷ fold` of intermediate |
 | Fluorescein intermediate | `1:(stock ÷ intermediate)`, sized to what the buffer takes + the extra |
-| Tb solution | `volumePerWell × wells + extra` |
+| Tb solution | `volumePerWell × wells + extra` — its own well count, unrelated to the assay's |
 | Tb stock | `volume ÷ dilution` (1:1000 by default), the rest diluent |
+
+Wells are never typed for the assay itself: each dilution step prepares `volForWells` µl and
+every well takes `compound_ul` of it, so `wellsCovered = Σ rows × volForWells ÷ compound_ul`
+falls out of the series. Wells the compounds never reach — buffer-only controls, a vehicle
+channel — are added as `wellBufferExtra_ul`. Terbium is the exception: it labels cells that
+may have nothing to do with the compound series, so it carries its own well count.
 
 Fluorescein goes into the **batch** every other diluent is drawn from, so the cells' buffer
 and the compound solutions carry it identically and the acceptor never changes when a

@@ -59,17 +59,47 @@ describe('enable / clear a condition', () => {
 });
 
 describe('project migration', () => {
-  it('gives a v3 project its own cell-suspension margin, unchanged from the old one', () => {
+  it('turns old margins into the volumes they stood for, per the conditions in use', () => {
+    const used = { entries: [{ dnaStockId: 'a', pct: 1 }] };
     const v3 = {
       version: 3,
       name: 'old', createdAt: '', updatedAt: '', notes: '',
-      transfection: { cells_k_per_well: 30, optimemMode: 'fixed', margin: 1.4 },
+      transfection: {
+        wellsPerCondition: 12, dna_ng_per_well: 100, optimem_ul_per_well: 10, peiDnaRatio: 3,
+        pei_ug_per_ul: 1, dmem_ul_per_well: 100, cells_k_per_well: 30, optimemMode: 'fixed',
+        margin: 1.2,
+      },
       dnaStocks: [], compounds: [],
-      grid: { cols: 1, rowGroups: 1, colLabels: [''], rowGroupLabels: [''], conditions: [[]] },
+      grid: { cols: 2, rowGroups: 1, colLabels: ['', ''], rowGroupLabels: [''], conditions: [[used, used]] },
     };
     const m = migrate(v3) as any;
     expect(m.version).toBe(PROJECT_VERSION);
-    expect(m.transfection.cellSuspensionMargin).toBe(1.4);
+    expect(m.transfection.margin).toBeUndefined();
+    // 2 conditions × (3.6 + 60) µl of mix × 0.2 = 25.44 µl
+    expect(m.transfection.transfectionMixExtra_ul).toBeCloseTo((3.6 + 60) * 2 * 0.2, 9);
+    // 2 conditions × 1200 µl of suspension × 0.2 = 480 µl
+    expect(m.transfection.cellSuspensionExtra_ul).toBeCloseTo(100 * 12 * 2 * 0.2, 9);
+  });
+
+  it('turns a compound block margin into the extra per tube it stood for', () => {
+    const v4 = {
+      version: 4,
+      name: 'old', createdAt: '', updatedAt: '', notes: '',
+      transfection: { wellsPerCondition: 12, dna_ng_per_well: 100, optimem_ul_per_well: 10, peiDnaRatio: 3, pei_ug_per_ul: 1, dmem_ul_per_well: 100, cells_k_per_well: 30, margin: 1, cellSuspensionMargin: 1 },
+      dnaStocks: [], compounds: [],
+      grid: { cols: 1, rowGroups: 1, colLabels: [''], rowGroupLabels: [''], conditions: [[]] },
+      dilutions: {
+        assayType: 'NanoBiT/BRET', dmsoOverride: null, addition: { compound_ul: 10, assayBuffer_ul: 80 },
+        dmsoPlacement: 'compound-only', blocks: [{ id: 'b', name: 'Iso', volForWells_ul: 200, margin: 1.25, stockConc_uM: 10000, vehicle: 'aqueous', excludeFromVehicleMatch: false, logM: [-5], notes: '' }],
+        bsa: { enabled: false, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' },
+        substrate: { enabled: true, volumePerWell_ul: 10, wells: 96, margin: 1.5, reference: 'after-compounds', components: [], notes: '' },
+        bufferNotes: '',
+      },
+    };
+    const m = migrate(v4) as any;
+    expect(m.dilutions.blocks[0].extraVolume_ul).toBeCloseTo(50, 9); // 200 × 0.25
+    expect(m.dilutions.blocks[0].margin).toBeUndefined();
+    expect(m.dilutions.substrate.extraVolume_ul).toBeCloseTo(480, 9); // 10 × 96 × 0.5
   });
 
   it('splits the old "already in the well" into plain buffer plus the substrate', () => {

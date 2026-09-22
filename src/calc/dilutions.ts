@@ -18,6 +18,16 @@
  * `dilutionFactor ×` that, because adding it to the well dilutes it by that factor.
  */
 
+import {
+  computeFluorescein,
+  computeTb,
+  defaultFluorescein,
+  defaultTb,
+  type FluoresceinResult,
+  type FluoresceinSettings,
+  type TbResult,
+  type TbSettings,
+} from './deret';
 import { computeSubstrate, defaultSubstrate, type SubstrateResult, type SubstrateSettings } from './substrate';
 import type { Vehicle, Warning } from './types';
 import { ceilingTo1, DMSO_IN_WELL_CONCERN, logMToUM, MIN_PIPETTE_UL, NEGLIGIBLE_RELATIVE, round } from './units';
@@ -58,13 +68,14 @@ export const ASSAY_PROFILES: Record<AssayType, AssayProfile> = {
     ],
   },
   DERET: {
-    diluent: 'furimazine solution',
-    normalBufferName: 'Furimazine solution (no DMSO)',
-    dmsoBufferName: 'Furimazine solution + DMSO',
-    compoundsComplete: false,
+    // The base liquid is ordinary assay buffer; the fluorescein is what the batch adds to it.
+    diluent: 'assay buffer',
+    normalBufferName: 'Fluorescein buffer (no DMSO)',
+    dmsoBufferName: 'Fluorescein buffer + DMSO',
+    compoundsComplete: true,
     pending: [
-      'For DERET the compounds are diluted in furimazine, not plain assay buffer — the volumes below are correct, but the diluent you prepare must be the furimazine solution.',
-      'Preparing that furimazine solution from its stock is NOT calculated yet.',
+      'The cells sit in fluorescein buffer and the compounds arrive in the same fluorescein buffer, so the acceptor never changes when a compound goes in — the batch below carries it.',
+      'Terbium labels the cells first and is washed out before the assay, so it is prepared separately and never enters the well composition.',
     ],
   },
 };
@@ -184,8 +195,8 @@ export interface CompoundBlock {
   stockConc_uM: number;
   /** L `E14`. */
   vehicle: Vehicle;
-  /** `m` — margin (×). L `E15`. */
-  margin: number;
+  /** Extra µl to prepare at each step, on top of what the wells take. Replaces the sheet's `m`. */
+  extraVolume_ul: number;
   /** The sheet notes "Terbium is never matched". */
   excludeFromVehicleMatch: boolean;
   /** One final in-well concentration per row, most concentrated first. `null` = empty row. */
@@ -211,6 +222,10 @@ export interface DilutionExperiment {
   premixOverrides: Record<DiluentId, number | null>;
   /** The detection reagent, prepared in the same assay buffer as the well. */
   substrate: SubstrateSettings;
+  /** DERET only: the fluorescein every buffer carries. */
+  fluorescein: FluoresceinSettings;
+  /** DERET only: the terbium labelling step, before the assay and washed out. */
+  tb: TbSettings;
   blocks: CompoundBlock[];
   bsa: BsaSettings;
   /** Buffer recipes etc., carried onto the bench sheet so it is self-contained. */
@@ -286,6 +301,9 @@ export interface DilutionResult {
    */
   plainBuffer_ul: number;
   substrate: SubstrateResult;
+  /** DERET only; inert for the other assays. */
+  fluorescein: FluoresceinResult;
+  tb: TbResult;
   warnings: Warning[];
 }
 
@@ -308,7 +326,7 @@ function geometry(block: CompoundBlock, factor: number) {
   const logMs = usedRows(block);
   const n = logMs.length;
   const conc = logMs.map(logMToUM);
-  const base = block.volForWells_ul * block.margin;
+  const base = block.volForWells_ul + Math.max(0, block.extraVolume_ul);
 
   const volToPrepare: number[] = new Array(n);
   for (let i = n - 1; i >= 0; i--) {
@@ -434,7 +452,7 @@ function computeBlock(block: CompoundBlock, factor: number, target: number, bsaF
           `Row ${i + 1}: ${r.aliquotIn_ul.toFixed(3)} µl is below the ${MIN_PIPETTE_UL} µl minimum — pre-dilute the stock, or raise the volume for wells.`,
         );
       }
-      if (r.leftForWells_ul + 1e-9 < block.volForWells_ul * block.margin) {
+      if (r.leftForWells_ul + 1e-9 < block.volForWells_ul) {
         warn('warn', 'not-enough-for-wells', `Row ${i + 1}: only ${r.leftForWells_ul.toFixed(1)} µl is left for the wells.`);
       }
     });
@@ -634,7 +652,7 @@ function wellBufferVolume(exp: DilutionExperiment): number {
   const perStep = assayBuffer_ul / compound_ul;
   return exp.blocks.reduce((total, b) => {
     const rows = b.logM.filter((v) => v !== null && Number.isFinite(v)).length;
-    return total + rows * b.volForWells_ul * b.margin * perStep;
+    return total + rows * (b.volForWells_ul + Math.max(0, b.extraVolume_ul)) * perStep;
   }, 0);
 }
 
@@ -731,9 +749,16 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
   const ov = exp.premixOverrides ?? { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null };
   const substrateSettings = exp.substrate ?? defaultSubstrate(exp.assayType);
 
-  // What the one batch of ready-made assay buffer carries.
+  /*
+   * What the one batch carries: only what *every* diluent drawn from it needs. BSA and
+   * fluorescein qualify when they are in every buffer; DMSO never does, because the
+   * DMSO-free compound diluent exists precisely to have none — so DMSO is added to the
+   * diluents that want it, which is also how the reference sheet prepares them. Without
+   * this the DMSO-free diluent would fall back to plain buffer and, in DERET, lose its
+   * fluorescein.
+   */
   const readyBsa = wellBsa;
-  const readyDmso = wellDmso;
+  const readyDmso = 0;
   const common = { readyBsa, readyDmso, bsaStockPct, diluentName: assay.diluent };
   const batchName = bufferName(assay.diluent, readyBsa, readyDmso);
 
@@ -789,6 +814,34 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
   });
 
   const recipes = readyBufferNeeded > 0 ? [assayBufferRecipe, ...downstream] : downstream;
+
+  // DERET only. Fluorescein goes into the batch every other diluent is drawn from, so its
+  // volume is set by that batch — and, being a few per cent of it, it displaces carrier
+  // exactly as any other stock does.
+  const fluoresceinSettings = exp.assayType === 'DERET' ? (exp.fluorescein ?? defaultFluorescein()) : { ...defaultFluorescein(), enabled: false };
+  const fluorescein = computeFluorescein(fluoresceinSettings, assayBufferRecipe.prepare_ul);
+  if (fluorescein.intoBuffer && fluorescein.intoBuffer.stock_ul > 0) {
+    assayBufferRecipe.components = [
+      ...assayBufferRecipe.components,
+      { name: `Fluorescein ${round(fluoresceinSettings.intermediate_uM, 1)} µM`, volume_ul: fluorescein.intoBuffer.stock_ul },
+    ];
+    assayBufferRecipe.base_ul = Math.max(0, assayBufferRecipe.base_ul - fluorescein.intoBuffer.stock_ul);
+    assayBufferRecipe.isPlainBuffer = false;
+    /*
+     * The batch is no longer plain buffer — it is buffer with fluorescein in it, and every
+     * row that names it should say so. The batch's own base stays plain: that is what you
+     * pour the fluorescein into.
+     */
+    const carrying = `${assay.diluent} + ${round(fluoresceinSettings.target_uM, 1)} µM fluorescein`;
+    for (const r of recipes) {
+      r.name = r.name
+        .replace(`plain ${assay.diluent}`, carrying)
+        .replace(`Plain ${assay.diluent}`, carrying[0].toUpperCase() + carrying.slice(1));
+      if (r.id !== 'assay-buffer') r.baseName = r.baseName.replace(`plain ${assay.diluent}`, carrying);
+    }
+  }
+
+  const tb = computeTb(exp.assayType === 'DERET' ? (exp.tb ?? defaultTb()) : { ...defaultTb(), enabled: false });
 
   for (const r of recipes) {
     if (r.scaledUpFor.length > 0) {
@@ -853,6 +906,14 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
     // from plain buffer (the batch itself included) comes off the shelf.
     plainBuffer_ul: recipes.reduce((a, r) => a + (r.fromReadyBuffer ? 0 : r.base_ul), 0),
     substrate,
-    warnings: [...warnings, ...substrate.warnings, ...blocks.flatMap((b) => b.warnings)],
+    fluorescein,
+    tb,
+    warnings: [
+      ...warnings,
+      ...substrate.warnings,
+      ...fluorescein.warnings,
+      ...tb.warnings,
+      ...blocks.flatMap((b) => b.warnings),
+    ],
   };
 }

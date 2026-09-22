@@ -39,7 +39,8 @@ export interface SubstrateSettings {
   volumePerWell_ul: number;
   /** Wells to measure. */
   wells: number;
-  margin: number;
+  /** Extra µl beyond what the wells take. */
+  extraVolume_ul: number;
   reference: SubstrateReference;
   components: SubstrateComponent[];
   notes: string;
@@ -99,7 +100,7 @@ export function computeSubstrate(s: SubstrateSettings, ctx: WellContext): Substr
     warnings.push({ level, code, scope: 'Substrate', message });
 
   const fold = substrateFold(s, ctx);
-  const required_ul = Math.max(0, s.volumePerWell_ul * s.wells * s.margin);
+  const required_ul = Math.max(0, s.volumePerWell_ul * s.wells + Math.max(0, s.extraVolume_ul));
   const assayBufferPerWell_ul = ctx.assayBuffer_ul;
 
   const components: SubstrateComponentResult[] = s.components.map((c) => {
@@ -141,7 +142,7 @@ const cid = () => `sub_${(seq += 1)}_${Math.random().toString(36).slice(2, 7)}`;
  * silently over the top of someone's numbers.
  */
 export function defaultSubstrate(assay: 'NanoBiT/BRET' | 'HiBiT' | 'DERET'): SubstrateSettings {
-  const base = { enabled: true, wells: 96, margin: 1.2, notes: '' };
+  const base = { enabled: true, wells: 96, extraVolume_ul: 200, notes: '' };
   switch (assay) {
     case 'HiBiT':
       // 50 µl/well of substrate 1:100 and LgBiT 1:200, both counted in the well and before

@@ -200,12 +200,29 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
   header and saving — the filename follows the name, so the parent file is untouched. Offered
   and declined; the Save flow is enough.
 
+## DERET, and excess as an amount (2026-09-22)
+
+- **Excess is stated as a volume, not a percentage.** "Prepare 500 µl more" is how it is
+  decided at the bench; a margin factor made people compute backwards from a number they did
+  not choose. Every margin became an extra: transfection mix, cell suspension, each compound
+  tube, the substrate, Tb. Old projects convert to the amounts their margins stood for.
+- **DERET is fluorescein, not furimazine.** An earlier guess from the original brief had it
+  as furimazine; the assay is terbium → fluorescein, and the acceptor sits in every buffer.
+- **Fluorescein belongs in the batch.** The cells' buffer and the compound solutions must
+  carry the same 1× fluorescein, so it goes into the one batch everything is drawn from —
+  the same place BSA goes. It is prepared through its own chain: 100 mM freezer stock → 1 mM
+  intermediate → into the buffer at 1:20 for 50 µM.
+- **The batch never carries DMSO.** Forced by DERET: with DMSO in the batch, the DMSO-free
+  compound diluent could not be drawn from it and fell back to plain buffer — silently losing
+  the fluorescein. The batch now holds only what every diluent needs, and DMSO is added per
+  diluent, which is also how the reference sheet prepares them.
+- **Terbium is a preparation, not an ingredient.** It labels the cells before the assay and
+  is washed out, so it is sized from the wells it labels and stays out of the well
+  composition and the DMSO matching entirely.
+
 ## Open / deferred
 
 - Deeper UI polish (keyboard navigation, sidebar, density) waits until modules 2 and 3 exist,
   so navigation is designed once rather than three times.
 - Module 4 (plate-reader output reshaper) stays a stub with a clean seam until 1–3 are done.
-- **DERET is next.** The furimazine solution the compounds are diluted in is not calculated
-  yet. Before building it, three things need answering: what stock the furimazine comes from,
-  what working concentration it is diluted to, and whether the compounds are made up in
-  furimazine at every dilution step or only the final one.
+- Module 3 is complete for NanoBiT/BRET, HiBiT and DERET.

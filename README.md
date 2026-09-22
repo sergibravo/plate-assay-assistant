@@ -62,9 +62,9 @@ npm test
    (`layout-aquous › Compounds`). Back-propagated prepared volumes, automatic DMSO matching
    across aqueous and DMSO stocks, per-compound and whole-experiment premix totals, and an
    assay-type selector (NanoBiT/BRET · HiBiT · DERET) that names the diluent and states what
-   each assay still needs. Substrate preparation is included — BRET/NanoBiT spiking and the
-   HiBiT kit recipe — premixed in the same assay buffer as the well. DERET's furimazine
-   diluent is not calculated yet.
+   each assay still needs. Substrate preparation is included for BRET/NanoBiT and HiBiT, and
+   DERET adds its fluorescein chain (100 mM → 1 mM → the working buffer) and the terbium
+   labelling step. Everything is premixed from one batch of assay buffer.
 4. **Plate-reader output reshaper** — stub only, by design.
 
 ## Later: sharing it beyond this lab

@@ -63,18 +63,18 @@ export interface TransfectionParams {
   /** PEI:DNA ratio (w/w) — `Setup!C7`. */
   peiDnaRatio: number;
   /**
-   * Excess factor for the **transfection master mix** — PEI and the OptiMEM that goes with
-   * it. `Setup!C8`. It is NOT applied to the per-condition DNA volumes: those stay at 1×
-   * (the sheet shows "Total DNA × margin" for reference only).
+   * Extra µl of **transfection master mix** (PEI + its OptiMEM) beyond what the conditions
+   * need, split between the two in proportion. An amount rather than a percentage, because
+   * that is how the excess is actually decided at the bench: "make 500 µl more".
+   * Per-condition DNA volumes are untouched by it.
    */
-  margin: number;
+  transfectionMixExtra_ul: number;
   /**
-   * Excess factor for the **cell suspension** — DMEM and cells. Kept separate because more
-   * is routinely lost on the cell side (counting, settling, the volume left in the
-   * reservoir) than on the PEI side, so one shared margin either wasted PEI or left the
-   * last wells short of cells.
+   * Extra µl of **cell suspension** (DMEM), with the cells scaled to keep the same density.
+   * Separate from the mix above because more is routinely lost on the cell side — counting,
+   * settling, what stays in the reservoir.
    */
-  cellSuspensionMargin: number;
+  cellSuspensionExtra_ul: number;
   /** Cells per well (thousands) — `Setup!F4` (the sheet stored millions; we store k). */
   cells_k_per_well: number;
   /** DMEM per well (µl) — `Setup!F5`. */

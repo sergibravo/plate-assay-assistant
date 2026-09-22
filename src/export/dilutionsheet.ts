@@ -162,12 +162,44 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
     rows.push([], section('BUFFER RECIPES'), [{ v: exp.bufferNotes, s: label() }]);
   }
 
+  if (result.fluorescein.enabled || result.tb.enabled) {
+    rows.push([], section('DERET — BEFORE THE ASSAY'));
+    if (result.tb.enabled) {
+      const tb = exp.tb;
+      rows.push(...[
+        param('Tb solution', `${round(result.tb.required_ul, 1)} µl`, `${tb.volumePerWell_ul} µl × ${tb.wells} wells + ${round(tb.extraVolume_ul, 1)} µl extra`),
+        [{ v: '  Tb stock', s: pipetteLabel() }, { v: round(result.tb.stock_ul, 3), s: pipette() }, { v: `µl  (1:${round(tb.dilution, 1)})`, s: unit() }],
+        [{ v: '  Diluent', s: pipetteLabel() }, { v: round(result.tb.diluent_ul, 1), s: pipette() }, { v: 'µl', s: unit() }],
+        [{ v: tb.notes || 'Added before everything else and washed out once the cells are labelled.', s: muted() }],
+      ]);
+    }
+    if (result.fluorescein.enabled && result.fluorescein.intoBuffer && result.fluorescein.intermediate) {
+      const f = exp.fluorescein;
+      rows.push([], [{ v: 'Fluorescein — every buffer carries it at 1×', s: { font: { bold: true } } }]);
+      rows.push([
+        { v: 'Step', s: { font: { bold: true } } },
+        { v: 'Make (µl)', s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
+        { v: 'Take (µl)', s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
+        { v: 'Into (µl)', s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
+      ]);
+      for (const st of [result.fluorescein.intermediate, result.fluorescein.intoBuffer]) {
+        rows.push([
+          { v: `${round(st.from_uM, 1)} µM → ${round(st.product_uM, 1)} µM  (1:${round(st.fold, 1)})`, s: label() },
+          { v: round(st.prepare_ul, 1), s: pipette() },
+          { v: round(st.stock_ul, 3), s: pipette() },
+          { v: round(st.diluent_ul, 1), s: pipette() },
+        ]);
+      }
+      rows.push([{ v: `The batch below is that ${round(f.target_uM, 1)} µM fluorescein buffer; every compound diluent is drawn from it.`, s: muted() }]);
+    }
+  }
+
   if (result.substrate.enabled) {
     const sub = exp.substrate;
     rows.push([], section('SUBSTRATE'));
     rows.push(...[
       param('Added per well', `${sub.volumePerWell_ul} µl`, `into ${round(result.substrate.assayBufferPerWell_ul, 1)} µl of ${result.assay.diluent}`),
-      param('Wells × margin', `${sub.wells} × ${sub.margin}`, `= ${round(result.substrate.required_ul, 1)} µl to prepare`),
+      param('Wells + extra', `${sub.wells} wells + ${round(sub.extraVolume_ul, 1)} µl`, `= ${round(result.substrate.required_ul, 1)} µl to prepare`),
       param(
         'Diluted in the well by',
         `${round(result.substrate.foldFactor, 3)}×`,
@@ -220,7 +252,7 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
       });
 
       rows.push([{ v: `${b.name || 'compound'} — ${source.stockConc_uM} µM stock in ${source.vehicle}${source.excludeFromVehicleMatch ? ', not DMSO-matched' : ''}`, s: { font: { bold: true, sz: 12, color: { rgb: colour.head } } } }]);
-      rows.push([{ v: `${source.volForWells_ul} µl per step × ${source.margin} margin · ${round(source.dilutionFactorOverride ?? result.additionFactor, 3)}× dilution on addition · take ${round(b.stockNeeded_ul, 3)} µl of stock`, s: muted() }]);
+      rows.push([{ v: `${source.volForWells_ul} µl per step + ${round(source.extraVolume_ul, 1)} µl extra · ${round(source.dilutionFactorOverride ?? result.additionFactor, 3)}× dilution on addition · take ${round(b.stockNeeded_ul, 3)} µl of stock`, s: muted() }]);
       rows.push([
         head('Conc. (logM)'),
         head('In tube (µM)'),

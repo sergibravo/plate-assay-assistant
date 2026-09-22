@@ -61,13 +61,13 @@ export function Module1({ project, update }: { project: Project; update: (p: Pro
             <NumField label="DNA per well" unit="ng" value={p.dna_ng_per_well} onChange={(v) => setParam('dna_ng_per_well', v)} />
             <NumField label="OptiMEM per well" unit="µl" value={p.optimem_ul_per_well} onChange={(v) => setParam('optimem_ul_per_well', v)} />
             <NumField label="PEI:DNA ratio" unit="w/w" value={p.peiDnaRatio} onChange={(v) => setParam('peiDnaRatio', v)} />
-            <NumField label="Margin — transfection mix" unit="×" value={p.margin} step={0.1} onChange={(v) => setParam('margin', v)} />
-            <NumField label="Margin — cell suspension" unit="×" value={p.cellSuspensionMargin} step={0.1} onChange={(v) => setParam('cellSuspensionMargin', v)} />
+            <NumField label="Extra transfection mix" unit="µl" value={p.transfectionMixExtra_ul} step={10} onChange={(v) => setParam('transfectionMixExtra_ul', v)} />
+            <NumField label="Extra cell suspension" unit="µl" value={p.cellSuspensionExtra_ul} step={100} onChange={(v) => setParam('cellSuspensionExtra_ul', v)} />
             <p className="hint">
-              Two margins, because the two sides lose different amounts. The first is the excess
-              PEI and its OptiMEM; the second the excess DMEM and cells, where counting, settling
-              and what stays in the reservoir usually cost more. Neither applies to the
-              per-condition DNA volumes — those stay at 1×.
+              Extra is an <strong>amount</strong>, not a percentage: how much more than the
+              conditions need. The mix extra keeps the PEI:OptiMEM ratio; the suspension extra
+              carries its own cells at the seeding density. Neither touches the per-condition DNA
+              volumes.
             </p>
           </div>
           <div>
@@ -85,7 +85,6 @@ export function Module1({ project, update }: { project: Project; update: (p: Pro
           <div>
             <h3>Calculated summary (per condition)</h3>
             <CalcField label="Total DNA" unit="ng" value={per.totalDna_ng} decimals={3} />
-            <CalcField label="Total DNA × margin" unit="ng" value={per.totalDnaWithMargin_ng} decimals={3} hint="reference only" />
             <CalcField label="PEI" unit="µl" value={per.pei_ul} decimals={3} />
             <CalcField label="OptiMEM for DNA" unit="µl" value={per.optimemForDna_ul} />
             <CalcField label="OptiMEM for PEI" unit="µl" value={per.optimemForPei_ul} />
@@ -169,13 +168,13 @@ export function Module1({ project, update }: { project: Project; update: (p: Pro
             </div>
             <p className="hint">
               Pipette these two into one tube — {fmtVol(mix.totalPei_ul + mix.totalOptimemForPei_ul)} µl
-              total, enough for {gridResult.activeCount || 1} condition{gridResult.activeCount === 1 ? '' : 's'} at {p.margin}× margin.
+              total: {gridResult.activeCount || 1} condition{gridResult.activeCount === 1 ? '' : 's'} plus {fmtVol(p.transfectionMixExtra_ul)} µl extra.
             </p>
             <CalcField label="PEI per condition" unit="µl" value={mix.peiPerCondition_ul} decimals={3} />
             <CalcField label="OptiMEM for PEI / condition" unit="µl" value={mix.optimemForPeiPerCondition_ul} />
           </div>
           <div>
-            <h3>Cell suspension <span className="sub">at {p.cellSuspensionMargin}× margin</span></h3>
+            <h3>Cell suspension <span className="sub">+{fmtVol(p.cellSuspensionExtra_ul)} µl extra</span></h3>
             <div className="pipette-box">
               <CalcField label="DMEM total" unit="µl" value={mix.dmemTotal_ul} strong />
               <CalcField label="Total cells needed" unit="k cells" value={mix.totalCells_k} decimals={1} strong hint={`= ${round(mix.totalCells_k / 1000, 4)} M`} />

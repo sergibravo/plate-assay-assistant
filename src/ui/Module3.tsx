@@ -35,6 +35,8 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
     update({ ...project, dilutions: { ...exp, ...patch } });
 
   const sub = exp.substrate;
+  const fluo = exp.fluorescein;
+  const tb = exp.tb;
   const wellVolume =
     exp.addition.assayBuffer_ul + (sub.enabled ? sub.volumePerWell_ul : 0) + exp.addition.compound_ul;
   const setSub = (patch: Partial<typeof sub>) => setExp({ substrate: { ...sub, ...patch } });
@@ -211,6 +213,101 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
         <Legend />
       </Panel>
 
+      {exp.assayType === 'DERET' && (
+        <Panel title="DERET — fluorescein & terbium">
+          <div className="grid-2">
+            <div>
+              <h3>Fluorescein <span className="sub">in every buffer, at 1×</span></h3>
+              <div className="field">
+                <label>Prepare fluorescein buffer</label>
+                <input
+                  type="checkbox"
+                  checked={fluo.enabled}
+                  onChange={(e) => setExp({ fluorescein: { ...fluo, enabled: e.target.checked } })}
+                  style={{ width: 16, justifySelf: 'end' }}
+                />
+                <span className="unit" />
+              </div>
+              {fluo.enabled && (
+                <>
+                  <NumField label="Working concentration" unit="µM" value={fluo.target_uM} step={10} onChange={(v) => setExp({ fluorescein: { ...fluo, target_uM: v } })} />
+                  <NumField label="Intermediate" unit="µM" value={fluo.intermediate_uM} step={100} onChange={(v) => setExp({ fluorescein: { ...fluo, intermediate_uM: v } })} />
+                  <NumField label="Freezer stock" unit="µM" value={fluo.stock_uM} step={1000} onChange={(v) => setExp({ fluorescein: { ...fluo, stock_uM: v } })} />
+                  <NumField label="Extra intermediate" unit="µl" value={fluo.intermediateExtra_ul} step={10} onChange={(v) => setExp({ fluorescein: { ...fluo, intermediateExtra_ul: v } })} />
+                  {result.fluorescein.intoBuffer && result.fluorescein.intermediate && (
+                    <table style={{ marginTop: 8 }}>
+                      <thead>
+                        <tr>
+                          <th>Step</th>
+                          <th className="num">Make (µl)</th>
+                          <th className="num">Take (µl)</th>
+                          <th className="num">Into (µl)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td>
+                            {round(fluo.stock_uM / 1000, 1)} mM → {round(fluo.intermediate_uM, 1)} µM
+                            <em className="sub" style={{ display: 'block' }}>1:{round(result.fluorescein.intermediate.fold, 1)}</em>
+                          </td>
+                          <td className="calc num">{fmtVol(result.fluorescein.intermediate.prepare_ul, 1)}</td>
+                          <td className="calc num">{fmtVol(result.fluorescein.intermediate.stock_ul, 3)}</td>
+                          <td className="calc num">{fmtVol(result.fluorescein.intermediate.diluent_ul, 1)}</td>
+                        </tr>
+                        <tr>
+                          <td>
+                            {round(fluo.intermediate_uM, 1)} µM → {round(fluo.target_uM, 1)} µM buffer
+                            <em className="sub" style={{ display: 'block' }}>1:{round(result.fluorescein.intoBuffer.fold, 1)}, into the batch</em>
+                          </td>
+                          <td className="calc num">{fmtVol(result.fluorescein.intoBuffer.prepare_ul, 1)}</td>
+                          <td className="calc num">{fmtVol(result.fluorescein.intoBuffer.stock_ul, 1)}</td>
+                          <td className="calc num">{fmtVol(result.fluorescein.intoBuffer.diluent_ul, 1)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  )}
+                  <p className="hint">
+                    The batch below is that fluorescein buffer, and every compound diluent is drawn
+                    from it — so the acceptor is identical before and after the compounds go in. It
+                    makes up {round(result.fluorescein.volumeFractionOfBuffer * 100, 2)} % of the
+                    batch volume.
+                  </p>
+                </>
+              )}
+            </div>
+            <div>
+              <h3>Terbium <span className="sub">labels the cells first, then washed out</span></h3>
+              <div className="field">
+                <label>Prepare Tb</label>
+                <input
+                  type="checkbox"
+                  checked={tb.enabled}
+                  onChange={(e) => setExp({ tb: { ...tb, enabled: e.target.checked } })}
+                  style={{ width: 16, justifySelf: 'end' }}
+                />
+                <span className="unit" />
+              </div>
+              {tb.enabled && (
+                <>
+                  <NumField label="Tb added" unit="µl per well" value={tb.volumePerWell_ul} step={10} onChange={(v) => setExp({ tb: { ...tb, volumePerWell_ul: v } })} />
+                  <NumField label="Wells to label" unit="wells" value={tb.wells} step={1} onChange={(v) => setExp({ tb: { ...tb, wells: v } })} />
+                  <NumField label="Dilution from stock" unit="1:N" value={tb.dilution} step={100} onChange={(v) => setExp({ tb: { ...tb, dilution: v } })} />
+                  <NumField label="Extra to prepare" unit="µl" value={tb.extraVolume_ul} step={50} onChange={(v) => setExp({ tb: { ...tb, extraVolume_ul: v } })} />
+                  <div className="pipette-box">
+                    <CalcField label="Tb solution" unit="µl" value={result.tb.required_ul} decimals={1} strong />
+                    <CalcField label="…of which Tb stock" unit="µl" value={result.tb.stock_ul} decimals={3} strong />
+                  </div>
+                  <CalcField label="Diluent" unit="µl" value={result.tb.diluent_ul} decimals={1} />
+                  <p className="hint">
+                    Tb goes on before everything else and is washed out once the cells are labelled,
+                    so it never enters the well composition and is not DMSO-matched.
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+        </Panel>
+      )}
       <Panel
         title="Substrate"
         actions={
@@ -244,7 +341,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
               <div>
                 <NumField label="Substrate added" unit="µl per well" value={sub.volumePerWell_ul} onChange={(v) => setSub({ volumePerWell_ul: v })} />
                 <NumField label="Wells to measure" unit="wells" value={sub.wells} step={1} onChange={(v) => setSub({ wells: v })} />
-                <NumField label="Margin" unit="×" value={sub.margin} step={0.1} onChange={(v) => setSub({ margin: v })} />
+                <NumField label="Extra to prepare" unit="µl" value={sub.extraVolume_ul} step={50} onChange={(v) => setSub({ extraVolume_ul: v })} />
                 <CalcField label="→ prepare" unit="µl" value={result.substrate.required_ul} decimals={1} strong />
                 <p className="hint">
                   The well then holds {fmtVol(result.substrate.assayBufferPerWell_ul, 1)} µl of plain{' '}
@@ -548,7 +645,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                   </select>
                   <span className="unit" />
                 </div>
-                <NumField label="Margin" unit="×" value={block.margin} step={0.1} onChange={(v) => setBlock(block.id, { margin: v })} />
+                <NumField label="Extra per tube" unit="µl" value={block.extraVolume_ul} step={10} onChange={(v) => setBlock(block.id, { extraVolume_ul: v })} />
                 {exp.bsa.enabled && (
                   <div className="field">
                     <label>BSA already in this stock</label>

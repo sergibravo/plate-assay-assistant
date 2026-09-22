@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { defaultFluorescein, defaultTb } from '../deret';
 import { computeSubstrate, defaultSubstrate, substrateFold, type SubstrateSettings } from '../substrate';
 import { computeDilutions, type CompoundBlock, type DilutionExperiment } from '../dilutions';
 
@@ -25,9 +26,9 @@ describe('BRET / NanoBiT substrate', () => {
     expect(r.components[0].preparedDilution).toBeCloseTo(1000 / 9, 12);
   });
 
-  it('volume is per-well × wells × margin, and the stock follows the prepared dilution', () => {
-    const r = computeSubstrate(bret({ wells: 96, margin: 1.2 }), WELL);
-    expect(r.required_ul).toBeCloseTo(10 * 96 * 1.2, 9); // 1152 µl
+  it('volume is per-well × wells + the extra, and the stock follows the prepared dilution', () => {
+    const r = computeSubstrate(bret({ wells: 96, extraVolume_ul: 192 }), WELL);
+    expect(r.required_ul).toBeCloseTo(10 * 96 + 192, 9); // 1152 µl
     // 1000 µl of a 1:100 solution takes 10 µl of stock
     expect(r.components[0].stock_ul).toBeCloseTo(10, 12);
   });
@@ -84,7 +85,7 @@ describe('DERET substrate', () => {
 describe('substrate inside the experiment', () => {
   const block: CompoundBlock = {
     id: 'b', name: 'Iso', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
-    vehicle: 'DMSO', margin: 1, excludeFromVehicleMatch: false, logM: [-5, -6], stockBsaPct: null, notes: '',
+    vehicle: 'DMSO', extraVolume_ul: 0, excludeFromVehicleMatch: false, logM: [-5, -6], stockBsaPct: null, notes: '',
   };
   const exp = (over: Partial<DilutionExperiment> = {}): DilutionExperiment => ({
     assayType: 'NanoBiT/BRET',
@@ -95,6 +96,8 @@ describe('substrate inside the experiment', () => {
     substrate: defaultSubstrate('NanoBiT/BRET'),
     blocks: [block],
     bsa: { enabled: false, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' },
+    fluorescein: { ...defaultFluorescein(), enabled: false },
+    tb: { ...defaultTb(), enabled: false },
     bufferNotes: '',
     ...over,
   });
@@ -102,7 +105,7 @@ describe('substrate inside the experiment', () => {
   it('adds a substrate premix listing each component as an ingredient', () => {
     const r = computeDilutions(exp());
     const sub = r.recipes.find((x) => x.id === 'substrate')!;
-    expect(sub.required_ul).toBeCloseTo(10 * 96 * 1.2, 9);
+    expect(sub.required_ul).toBeCloseTo(10 * 96 + defaultSubstrate('NanoBiT/BRET').extraVolume_ul, 9);
     expect(sub.components[0].name).toMatch(/1:100/);
     expect(sub.components[0].volume_ul).toBeCloseTo(sub.prepare_ul / 100, 9);
     expect(sub.base_ul).toBeCloseTo(sub.prepare_ul - sub.components[0].volume_ul, 9);
@@ -146,11 +149,14 @@ describe('substrate inside the experiment', () => {
       }),
     );
     const sub = r.recipes.find((x) => x.id === 'substrate')!;
-    const componentFraction = sub.components[0].volume_ul / sub.prepare_ul;
-    // 1 % of the volume is substrate stock, so the carrier lands 1 % low — inside the noise
-    expect(sub.achievedBsa).toBeCloseTo(0.0001 * (1 - componentFraction), 9);
+    // everything added — substrate stocks, and the DMSO this diluent needs — displaces
+    // carrier-bearing buffer, so BSA lands in proportion to the buffer left
+    expect(sub.achievedBsa).toBeCloseTo(0.0001 * (sub.base_ul / sub.prepare_ul), 9);
+    expect(sub.achievedBsa).toBeLessThan(0.0001);
     expect(sub.correctedFor).toEqual([]);
-    expect(sub.leftShortFor.map((x) => x.name).sort()).toEqual(['BSA', 'DMSO']);
+    // only the carried additive falls short; DMSO is pipetted in for the full volume
+    expect(sub.leftShortFor.map((x) => x.name)).toEqual(['BSA']);
+    expect(sub.achievedDmso).toBeCloseTo(r.target, 9);
     expect(r.warnings.some((w) => w.code === 'carrier-left-short')).toBe(true);
   });
 
@@ -194,7 +200,7 @@ describe('substrate inside the experiment', () => {
 describe('premix presentation', () => {
   const blocks: CompoundBlock[] = [
     { id: 'b', name: 'Nebi', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
-      vehicle: 'DMSO', margin: 1, excludeFromVehicleMatch: false, logM: [-5, -6], stockBsaPct: null, notes: '' },
+      vehicle: 'DMSO', extraVolume_ul: 0, excludeFromVehicleMatch: false, logM: [-5, -6], stockBsaPct: null, notes: '' },
   ];
   const base = (over: Partial<DilutionExperiment> = {}): DilutionExperiment => ({
     assayType: 'NanoBiT/BRET',
@@ -205,6 +211,8 @@ describe('premix presentation', () => {
     substrate: defaultSubstrate('NanoBiT/BRET'),
     blocks,
     bsa: { enabled: true, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' },
+    fluorescein: { ...defaultFluorescein(), enabled: false },
+    tb: { ...defaultTb(), enabled: false },
     bufferNotes: '',
     ...over,
   });
@@ -250,7 +258,7 @@ describe('premix presentation', () => {
 describe('plain buffer is not a preparation', () => {
   const blocks: CompoundBlock[] = [
     { id: 'b', name: 'Iso', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
-      vehicle: 'aqueous', margin: 1, excludeFromVehicleMatch: false, logM: [-5, -6], stockBsaPct: null, notes: '' },
+      vehicle: 'aqueous', extraVolume_ul: 0, excludeFromVehicleMatch: false, logM: [-5, -6], stockBsaPct: null, notes: '' },
   ];
   const plain = (over: Partial<DilutionExperiment> = {}): DilutionExperiment => ({
     assayType: 'NanoBiT/BRET',
@@ -261,6 +269,8 @@ describe('plain buffer is not a preparation', () => {
     substrate: { ...defaultSubstrate('NanoBiT/BRET'), enabled: false },
     blocks,
     bsa: { enabled: false, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' },
+    fluorescein: { ...defaultFluorescein(), enabled: false },
+    tb: { ...defaultTb(), enabled: false },
     bufferNotes: '',
     ...over,
   });

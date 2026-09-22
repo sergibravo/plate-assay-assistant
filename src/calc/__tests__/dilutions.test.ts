@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { defaultFluorescein, defaultTb } from '../deret';
 import { defaultSubstrate } from '../substrate';
 import {
   computeDilutions,
@@ -15,7 +16,7 @@ const block = (over: Partial<CompoundBlock> = {}): CompoundBlock => ({
   dilutionFactorOverride: null,
   stockConc_uM: 10000,
   vehicle: 'aqueous',
-  margin: 1,
+  extraVolume_ul: 0,
   excludeFromVehicleMatch: false,
   logM: [],
   stockBsaPct: null,
@@ -34,9 +35,11 @@ const experiment = (blocks: CompoundBlock[], over: Partial<DilutionExperiment> =
   addition: ADDITION_2X,
   dmsoPlacement: 'compound-only' as const,
   premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
-  substrate: { ...defaultSubstrate('NanoBiT/BRET'), enabled: false },
+  substrate: { ...defaultSubstrate('NanoBiT/BRET'), enabled: false, extraVolume_ul: 0 },
   blocks,
   bsa: NO_BSA,
+  fluorescein: { ...defaultFluorescein(), enabled: false },
+  tb: { ...defaultTb(), enabled: false },
   bufferNotes: '',
   ...over,
 });
@@ -253,10 +256,11 @@ describe('assay types', () => {
     expect(r.assay.pending.join(' ')).toMatch(/1:100.*1:200/);
   });
 
-  it('DERET dilutes compounds in furimazine, and says that preparation is not calculated', () => {
+  it('DERET dilutes compounds in the fluorescein buffer the cells sit in', () => {
     const r = computeDilutions(experiment([block({ name: 'Iso', logM: [-5] })], { assayType: 'DERET' }));
-    expect(r.assay.diluent).toBe('furimazine solution');
-    expect(r.assay.pending.join(' ')).toMatch(/furimazine/i);
+    expect(r.assay.diluent).toBe('assay buffer');
+    expect(r.assay.pending.join(' ')).toMatch(/fluorescein/i);
+    expect(r.assay.pending.join(' ')).toMatch(/[Tt]erbium/);
   });
 
   it('the assay type never changes a volume', () => {

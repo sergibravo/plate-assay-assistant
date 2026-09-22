@@ -5,6 +5,7 @@
  */
 
 import type { CompoundBlock, DilutionExperiment } from '../calc/dilutions';
+import { defaultFluorescein, defaultTb } from '../calc/deret';
 import { defaultSubstrate } from '../calc/substrate';
 import type {
   Compound,
@@ -14,7 +15,7 @@ import type {
   TransfectionParams,
 } from '../calc/types';
 
-export const PROJECT_VERSION = 4 as const;
+export const PROJECT_VERSION = 5 as const;
 
 export interface Project {
   version: typeof PROJECT_VERSION;
@@ -159,7 +160,7 @@ export function newCompoundBlock(name = '', rows = 8): CompoundBlock {
     dilutionFactorOverride: null,
     stockConc_uM: 10000,
     vehicle: 'aqueous',
-    margin: 1,
+    extraVolume_ul: 50,
     excludeFromVehicleMatch: false,
     logM: Array.from({ length: rows }, () => null),
     stockBsaPct: null,
@@ -175,6 +176,8 @@ export function emptyDilutions(): DilutionExperiment {
     dmsoPlacement: 'compound-only',
     premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
     substrate: defaultSubstrate('NanoBiT/BRET'),
+    fluorescein: defaultFluorescein(),
+    tb: defaultTb(),
     blocks: [newCompoundBlock('Compound 1')],
     bsa: { enabled: false, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' },
     bufferNotes: '',
@@ -194,8 +197,8 @@ export function newProject(name = 'Untitled experiment'): Project {
     dna_ng_per_well: 100,
     optimem_ul_per_well: 10,
     peiDnaRatio: 3,
-    margin: 1.2,
-    cellSuspensionMargin: 1.3,
+    transfectionMixExtra_ul: 100,
+    cellSuspensionExtra_ul: 1000,
     cells_k_per_well: 30,
     dmem_ul_per_well: 100,
     plateFormat: '96-well',
@@ -254,6 +257,40 @@ export function migrate(raw: any): Project {
     }
     p.version = 4;
   }
+  if (p.version === 4) {
+    // v5 replaces the two margins with extra volumes. Converting needs the number of
+    // conditions the project actually uses, so that the amounts prepared do not change.
+    const t = p.transfection ?? {};
+    const active = (p.grid?.conditions ?? [])
+      .flat()
+      .filter((c: any) => (c.entries ?? []).some((e: any) => e.pct !== null && e.pct !== undefined)).length;
+    const conditions = Math.max(active, 1);
+    const pei = ((t.dna_ng_per_well * t.wellsPerCondition) * t.peiDnaRatio) / 1000 / t.pei_ug_per_ul;
+    const optimem = (t.optimem_ul_per_well * t.wellsPerCondition) / 2;
+    const mixMargin = (t.margin ?? 1.2) - 1;
+    const cellMargin = (t.cellSuspensionMargin ?? t.margin ?? 1.2) - 1;
+    p.transfection = {
+      ...t,
+      transfectionMixExtra_ul: Math.round(Math.max(0, (pei + optimem) * conditions * mixMargin) * 100) / 100 || 0,
+      cellSuspensionExtra_ul: Math.round(Math.max(0, t.dmem_ul_per_well * t.wellsPerCondition * conditions * cellMargin) * 100) / 100 || 0,
+    };
+    delete p.transfection.margin;
+    delete p.transfection.cellSuspensionMargin;
+    // Per-tube and substrate margins become the amounts they stood for, so the volumes
+    // prepared do not change.
+    for (const b of p.dilutions?.blocks ?? []) {
+      if (b.margin !== undefined && b.extraVolume_ul === undefined) {
+        b.extraVolume_ul = Math.max(0, b.volForWells_ul * (b.margin - 1));
+        delete b.margin;
+      }
+    }
+    const sub = p.dilutions?.substrate;
+    if (sub && sub.margin !== undefined && sub.extraVolume_ul === undefined) {
+      sub.extraVolume_ul = Math.max(0, sub.volumePerWell_ul * sub.wells * (sub.margin - 1));
+      delete sub.margin;
+    }
+    p.version = 5;
+  }
   p.dnaStocks = (p.dnaStocks ?? []).map((s: any) => ({ plasmidId: '', notes: '', ...s }));
   // Fields added after a project was saved fall back to the previous behaviour.
   p.transfection = { optimemMode: 'fixed', ...p.transfection };
@@ -264,6 +301,8 @@ export function migrate(raw: any): Project {
   p.dilutions.bsa = { ...emptyDilutions().bsa, ...(p.dilutions.bsa ?? {}) };
   p.dilutions.premixOverrides = { ...emptyDilutions().premixOverrides, ...(p.dilutions.premixOverrides ?? {}) };
   p.dilutions.substrate = p.dilutions.substrate ?? defaultSubstrate(p.dilutions.assayType ?? 'NanoBiT/BRET');
+  p.dilutions.fluorescein = { ...defaultFluorescein(), ...(p.dilutions.fluorescein ?? {}) };
+  p.dilutions.tb = { ...defaultTb(), ...(p.dilutions.tb ?? {}) };
   // The addition used to be split between a global in-well factor and a per-block dilution
   // factor; it is now one setting, expressed as the volumes actually pipetted.
   if (p.dilutions.inWellFactor !== undefined && !hadAddition) {

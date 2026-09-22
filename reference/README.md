@@ -8,7 +8,8 @@ a calculation is questioned, it is checked against these files.
 | `260821_hibit_transfection_optimisation_dilutions_template.xlsx` | `Setup`, `PEI Mix`, `DNA Mixes` | module 1 |
 | | `Plate Layout` | module 2 (not built) |
 | | `Dilutions` (simpler precursor) | module 3 (not built) |
-| `layout-aquous.xlsx` | `Compounds` (improved version, with DMSO matching) | module 3 (not built) |
+| `layout-aquous.xlsx` | `Compounds` (improved version, with DMSO matching) | module 3 |
+| `DERTET calculation.xlsx` | `Reagents` — Tb, fluorescein chain, buffer totals | module 3, DERET |
 
 These are **snapshots**, copied 2026-08-25 from `~/Desktop` and `~/Documents`; the originals
 were left in place. If you change a workbook and want the app checked against the new

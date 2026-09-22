@@ -18,8 +18,9 @@ const SHEET_PARAMS: TransfectionParams = {
   dna_ng_per_well: 100, // Setup!C5
   optimem_ul_per_well: 10, // Setup!C6
   peiDnaRatio: 3, // Setup!C7
-  margin: 1.2, // Setup!C8
-  cellSuspensionMargin: 1.2, // the sheet used one margin for both sides
+  // The sheet's 1.2× margin over 8 conditions, expressed as the amounts it stood for.
+  transfectionMixExtra_ul: (3.6 + 60) * 8 * 0.2, // 101.76 µl of PEI+OptiMEM mix
+  cellSuspensionExtra_ul: 100 * 12 * 8 * 0.2, // 1920 µl of suspension
   cells_k_per_well: 30, // Setup!F4 (sheet stored 0.03 M = 30 k)
   dmem_ul_per_well: 100, // Setup!F5
   plateFormat: '96-well',
@@ -40,7 +41,9 @@ describe('Setup sheet — per condition (acceptance test 1)', () => {
   const r = perCondition(SHEET_PARAMS);
 
   it('Total DNA / condition = 1200 ng (Setup!C23)', () => expect(r.totalDna_ng).toBe(1200));
-  it('Total DNA × margin = 1440 ng (Setup!C24)', () => expect(r.totalDnaWithMargin_ng).toBe(1440));
+  it('Total DNA is not scaled by any extra (Setup!C24 was reference only)', () => {
+    expect(r.totalDnaWithMargin_ng).toBe(1200);
+  });
   it('PEI / condition = 3.6 µl (Setup!C25)', () => expect(r.pei_ul).toBeCloseTo(3.6, 12));
   it('OptiMEM for DNA = 60 µl (Setup!C26)', () => expect(r.optimemForDna_ul).toBe(60));
   it('OptiMEM for PEI = 60 µl (Setup!C27)', () => expect(r.optimemForPei_ul).toBe(60));
@@ -293,26 +296,39 @@ describe('plate formats', () => {
   });
 });
 
-describe('separate margins for the two master mixes', () => {
-  it('the cell suspension can carry more excess than the PEI mix', () => {
-    const p = { ...SHEET_PARAMS, margin: 1.2, cellSuspensionMargin: 1.5 };
-    const m = masterMix(p, 8);
-    // PEI side unchanged from the sheet
-    expect(m.totalPei_ul).toBeCloseTo(34.56, 10);
-    expect(m.totalOptimemForPei_ul).toBeCloseTo(576, 10);
-    // cell side scaled by its own margin: 100 µl × 12 wells × 1.5 × 8
-    expect(m.dmemTotal_ul).toBeCloseTo(14400, 9);
-    expect(m.totalCells_k).toBeCloseTo(30 * 12 * 1.5 * 8, 9);
+describe('extra volumes rather than margins', () => {
+  it('extra mix is split in the ratio of the mix itself', () => {
+    const m = masterMix({ ...SHEET_PARAMS, transfectionMixExtra_ul: 636 }, 8);
+    // 8 conditions need 28.8 µl PEI + 480 µl OptiMEM; 636 µl extra keeps that ratio
+    const peiShare = 3.6 / (3.6 + 60);
+    expect(m.totalPei_ul).toBeCloseTo(3.6 * 8 + 636 * peiShare, 9);
+    expect(m.totalOptimemForPei_ul).toBeCloseTo(60 * 8 + 636 * (1 - peiShare), 9);
+    expect(m.totalPei_ul + m.totalOptimemForPei_ul).toBeCloseTo((3.6 + 60) * 8 + 636, 9);
   });
 
-  it('equal margins reproduce the sheet exactly', () => {
-    const m = masterMix({ ...SHEET_PARAMS, cellSuspensionMargin: 1.2 }, 8);
+  it('extra suspension carries its own cells at the seeding density', () => {
+    const m = masterMix({ ...SHEET_PARAMS, cellSuspensionExtra_ul: 2000 }, 8);
+    expect(m.dmemTotal_ul).toBeCloseTo(100 * 12 * 8 + 2000, 9);
+    // 30 k cells per 100 µl → 600 k extra cells in 2000 µl
+    expect(m.totalCells_k).toBeCloseTo(30 * 12 * 8 + 600, 9);
+  });
+
+  it('the two extras are independent', () => {
+    const m = masterMix({ ...SHEET_PARAMS, transfectionMixExtra_ul: 0, cellSuspensionExtra_ul: 5000 }, 8);
+    expect(m.totalPei_ul).toBeCloseTo(28.8, 9);
+    expect(m.dmemTotal_ul).toBeCloseTo(9600 + 5000, 9);
+  });
+
+  it('reproduces the sheet when the extras stand for its 1.2× margin', () => {
+    const m = masterMix(SHEET_PARAMS, 8);
+    expect(m.totalPei_ul).toBeCloseTo(34.56, 9);
+    expect(m.totalOptimemForPei_ul).toBeCloseTo(576, 9);
     expect(m.dmemTotal_ul).toBeCloseTo(11520, 9);
     expect(m.totalCells_k).toBeCloseTo(3456, 9);
   });
 
-  it('flags a cell margin below 1×', () => {
-    const codes = validateParams({ ...SHEET_PARAMS, cellSuspensionMargin: 0.8 }).map((w) => w.code);
-    expect(codes).toContain('cell-margin');
+  it('rejects a negative extra', () => {
+    const codes = validateParams({ ...SHEET_PARAMS, cellSuspensionExtra_ul: -10 }).map((w) => w.code);
+    expect(codes).toContain('cell-extra');
   });
 });

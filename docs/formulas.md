@@ -18,10 +18,10 @@ Sources:
 | OptiMEM for PEI (µl) | T `Setup!C27` | `(C6*C4)/2` | `perCondition` |
 | DMEM / condition (µl) | T `Setup!C28` | `F5*C4` | `perCondition` |
 | Cells / condition (k) | T `Setup!C29` | `F4*C4` | `perCondition` |
-| Total PEI (µl) | T `PEI Mix!C6` | `C5*C4*margin` | `masterMix` |
-| Total OptiMEM for PEI (µl) | T `PEI Mix!C8` | `C7*C4*margin` | `masterMix` |
-| DMEM total (µl) | T `PEI Mix!F4` | `Setup!F5*Setup!C4*cellMargin*C4` | `masterMix` |
-| Total cells (k) | T `PEI Mix!F5` | `Setup!F4*Setup!C4*cellMargin*C4` | `masterMix` |
+| Total PEI (µl) | T `PEI Mix!C6` | `C5*C4 + extra × (PEI share of the mix)` | `masterMix` |
+| Total OptiMEM for PEI (µl) | T `PEI Mix!C8` | `C7*C4 + extra × (OptiMEM share)` | `masterMix` |
+| DMEM total (µl) | T `PEI Mix!F4` | `Setup!F5*Setup!C4*C4 + cell extra` | `masterMix` |
+| Total cells (k) | T `PEI Mix!F5` | `Setup!F4*Setup!C4*C4 + cell extra × seeding density` | `masterMix` |
 | DNA row ng | T `DNA Mixes!E11` | `(Setup!C5*Setup!C4)*pct/100` | `computeCondition` |
 | DNA row µl | T `DNA Mixes!F11` | `ng / stockConc`, `—` if stock blank/0 | `computeCondition` |
 | OptiMEM in the DNA tube (`fixed`) | T `DNA Mixes!E20` | `Setup!C26` | `computeCondition` |
@@ -40,12 +40,12 @@ block A2 → 6 ng / 0.6 µl HiBiT, filler 99.5 % → 1194 ng / 1.194 µl, totals
   0.03 M/well; the app holds 30 k/well. All downstream cell numbers are in k, with the
   millions equivalent shown as a hint. Project files saved before this change are
   converted automatically (`migrate`, `src/state/project.ts`).
-- **Two margins, not one.** `margin` multiplies the transfection mix (PEI + its OptiMEM);
-  `cellSuspensionMargin` multiplies the cell suspension (DMEM + cells), where counting,
-  settling and reservoir dead volume routinely cost more. The sheet had a single `Setup!C8`
-  for both, so a project saved before the split carries its old value into both and every
-  previous number is unchanged. Per-condition DNA volumes stay at 1×; "Total DNA × margin"
-  is displayed for reference, as the sheet did, and feeds no downstream volume.
+- **Excess is an amount, not a percentage**, everywhere: `transfectionMixExtra_ul`,
+  `cellSuspensionExtra_ul`, a compound block's `extraVolume_ul` per tube, the substrate's and
+  Tb's own extras. The mix extra keeps the PEI:OptiMEM ratio; the suspension extra carries
+  cells at the seeding density. Projects saved with the old margins are converted to the
+  amounts those margins stood for, so nothing computed before changes. Per-condition DNA
+  volumes are untouched by any of it.
 - **DNA stocks carry a lab ID** (`plasmidId`) alongside the name. It prints on the bench
   sheet next to every DNA line.
 - **The OptiMEM volume per DNA tube has two modes** (`optimemMode`): `fixed` reproduces the
@@ -121,15 +121,32 @@ Both DMSO and BSA carry a placement, and it decides only what the *well* ends at
 Tube volumes are identical either way (asserted by a test); the only difference is the well
 buffer's own recipe and the reported in-well figure.
 
+### DERET (`src/calc/deret.ts`) — reference: `DERTET calculation.xlsx › Reagents`
+
+| Quantity | Formula |
+| --- | --- |
+| Fluorescein into the buffer | `1:(intermediate ÷ target)`, so `batch ÷ fold` of intermediate |
+| Fluorescein intermediate | `1:(stock ÷ intermediate)`, sized to what the buffer takes + the extra |
+| Tb solution | `volumePerWell × wells + extra` |
+| Tb stock | `volume ÷ dilution` (1:1000 by default), the rest diluent |
+
+Fluorescein goes into the **batch** every other diluent is drawn from, so the cells' buffer
+and the compound solutions carry it identically and the acceptor never changes when a
+compound is added — it is simply another component of the batch, and displaces carrier like
+any other stock. Terbium labels the cells first and is washed out, so it never enters the
+well composition, is not DMSO-matched, and is sized only by the wells it labels.
+
 ### Premixes come from one batch of assay buffer
 
 This lab keeps one batch of ready-made assay buffer — already carrying the BSA, and the DMSO
 when every buffer carries it — and makes everything else from it. The app prints the premixes
 in that order: the batch first, then each diluent taken from it plus whatever it still needs.
 
-A premix needing *less* carrier than the batch holds (a DMSO-free compound diluent when every
-buffer carries DMSO) cannot come from the batch and is built from plain buffer instead; the
-recipe says which base each row starts from.
+The batch carries only what **every** diluent drawn from it needs: BSA when it is in every
+buffer, fluorescein in DERET — never DMSO, since the DMSO-free compound diluent exists
+precisely to have none. DMSO is added to the diluents that want it, which is how the
+reference sheet prepares them, and it means no diluent ever falls back to plain buffer and
+loses the batch's fluorescein.
 
 **Plain buffer is not a preparation.** A row that ends up as plain buffer and nothing else
 (`isPlainBuffer`) comes out of the bottle on the shelf, so it is left off the recipe entirely;

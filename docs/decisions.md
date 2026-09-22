@@ -235,7 +235,13 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
   it is prepared as more of the matched diluent and counted in every buffer total, but it has
   no dilution series and never appears as a block at the bottom of the page.
 - **The fluorescein panel says what the batch is for** — cells versus compounds, needed
-  versus drawn — because "prepare 13 ml" invites the question of where it all goes.
+  versus drawn, with vehicle alone on its own line — because "prepare 13 ml" invites the
+  question of where it all goes, and an amount folded into a total is an amount nobody can
+  check. The premix row for the matched diluent says it includes the vehicle too.
+- **A pinned premix volume hides what feeds it.** An override fixes the prepared volume, so
+  adding a vehicle channel changed the *needed* figure while the prepared one, and therefore
+  the batch and its fluorescein, stayed put. That is correct behaviour but it reads as the
+  vehicle being ignored, which is why both figures are now shown side by side.
 - (superseded) Well counts were derived, not typed. Each step prepares `volForWells` µl and each well
   takes the addition volume, so the count falls out of the series — shown read-only. Wells
   the compounds never reach are added as extra well buffer, in µl, like every other excess.

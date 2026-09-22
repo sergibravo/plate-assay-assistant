@@ -335,10 +335,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                         <td className="calc num">{fmtVol(result.bufferUse.wells_ul, 1)}</td>
                       </tr>
                       <tr>
-                        <td>
-                          The compounds
-                          {result.bufferUse.vehicle_ul > 0 ? `, vehicle alone included (${fmtVol(result.bufferUse.vehicle_ul, 1)} µl)` : ''}
-                        </td>
+                        <td>The compounds</td>
                         <td className="num">
                           {fmtVol(
                             ['normal', 'dmso'].reduce((a, id) => a + (result.recipes.find((r) => r.id === id)?.required_ul ?? 0), 0),
@@ -347,6 +344,16 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                         </td>
                         <td className="calc num">{fmtVol(result.bufferUse.compounds_ul, 1)}</td>
                       </tr>
+                      {result.bufferUse.vehicle_ul > 0 && (
+                        <tr>
+                          <td style={{ paddingLeft: 22 }}>
+                            …of that, vehicle alone
+                            <em className="sub"> (no compound in it)</em>
+                          </td>
+                          <td className="num">{fmtVol(result.bufferUse.vehicle_ul, 1)}</td>
+                          <td className="num">—</td>
+                        </tr>
+                      )}
                       <tr className="total">
                         <td>Batch prepared, rounded up</td>
                         <td className="num" />
@@ -586,7 +593,12 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                     <tr key={r.id}>
                       <td>
                         {r.name}
-                        <em className="sub" style={{ display: 'block' }}>from {r.baseName}</em>
+                        <em className="sub" style={{ display: 'block' }}>
+                          from {r.baseName}
+                          {result.bufferUse.vehicle_ul > 0 && r.id === (result.target > 0 ? 'dmso' : 'normal')
+                            ? ` · includes ${fmtVol(result.bufferUse.vehicle_ul, 1)} µl vehicle alone`
+                            : ''}
+                        </em>
                       </td>
                       <td className="num">{fmtVol(r.required_ul, 1)}</td>
                       <td className="input">

@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import {
   ASSAY_PROFILES,
   computeDilutions,
+  substrateInWell,
   type AssayType,
   type CompoundBlock,
   type Placement,
@@ -40,10 +41,12 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
     update({ ...project, dilutions: { ...exp, ...patch } });
 
   const sub = exp.substrate;
+  /** What the well actually receives — `null` for DERET, which has no substrate step. */
+  const wellSubstrate = substrateInWell(exp);
   const fluo = exp.fluorescein;
   const tb = exp.tb;
   const wellVolume =
-    exp.addition.assayBuffer_ul + (sub.enabled ? sub.volumePerWell_ul : 0) + exp.addition.compound_ul;
+    exp.addition.assayBuffer_ul + (wellSubstrate?.volumePerWell_ul ?? 0) + exp.addition.compound_ul;
   const setSub = (patch: Partial<typeof sub>) => setExp({ substrate: { ...sub, ...patch } });
   const setComponent = (id: string, patch: Partial<(typeof sub.components)[number]>) =>
     setSub({ components: sub.components.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
@@ -106,10 +109,10 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
               value={exp.addition.assayBuffer_ul}
               onChange={(v) => setExp({ addition: { ...exp.addition, assayBuffer_ul: v } })}
             />
-            {sub.enabled && (
+            {wellSubstrate && (
               <div className="field">
                 <label>Substrate added</label>
-                <output className="calc">{fmtVol(sub.volumePerWell_ul, 1)}</output>
+                <output className="calc">{fmtVol(wellSubstrate.volumePerWell_ul, 1)}</output>
                 <span className="unit">µl per well</span>
               </div>
             )}
@@ -136,7 +139,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
               Any of these may be 0 — 50 µl of compound into an empty well is a 1× addition.
               Each tube is prepared at {round(result.additionFactor, 3)}× the concentration you
               type, so the logM in the tables below is what the <strong>cells</strong> finally see.
-              {sub.enabled ? ' The substrate volume is set in the Substrate panel.' : ''}
+              {wellSubstrate ? ' The substrate volume is set in the Substrate panel.' : ''}
             </p>
           </div>
           <div>

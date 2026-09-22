@@ -96,9 +96,19 @@ export interface AdditionSettings {
   assayBuffer_ul: number;
 }
 
+/**
+ * The substrate that actually goes into the well, or `null`. DERET has no substrate step at
+ * all, so one left switched on from another assay must not reach any volume — not the well
+ * total, not the addition factor, not a premix.
+ */
+export function substrateInWell(exp: DilutionExperiment): SubstrateSettings | null {
+  if (exp.assayType === 'DERET') return null;
+  return exp.substrate?.enabled ? exp.substrate : null;
+}
+
 /** Everything that ends up in the well. */
 export function wellTotal(exp: DilutionExperiment): number {
-  const substrate = exp.substrate?.enabled ? exp.substrate.volumePerWell_ul : 0;
+  const substrate = substrateInWell(exp)?.volumePerWell_ul ?? 0;
   return exp.addition.assayBuffer_ul + substrate + exp.addition.compound_ul;
 }
 
@@ -769,10 +779,8 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
   const wellDmso = exp.dmsoPlacement === 'all-buffers' ? target : 0;
 
   const ov = exp.premixOverrides ?? { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null };
-  // DERET has no substrate step, so it is not merely hidden in the UI: it is not computed.
   const storedSubstrate = exp.substrate ?? defaultSubstrate(exp.assayType);
-  const substrateSettings =
-    exp.assayType === 'DERET' ? { ...storedSubstrate, enabled: false } : storedSubstrate;
+  const substrateSettings = substrateInWell(exp) ?? { ...storedSubstrate, enabled: false };
 
   /*
    * What the one batch carries: only what *every* diluent drawn from it needs. BSA and

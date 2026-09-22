@@ -222,8 +222,10 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
 
 ## DERET follow-ups (2026-09-22)
 
-- **DERET has no substrate section at all** — it is not merely hidden: a substrate left
-  switched on from another assay is ignored, so nothing invisible can reach the bench sheet.
+- **DERET has no substrate section at all** — it is not merely hidden. A substrate left
+  switched on from another assay was still counted in the well volume and so in the addition
+  factor, which is a wrong number reached through an invisible field. One helper,
+  `substrateInWell`, now decides it for the engine and the UI together.
 - **Fluorescein stocks are entered in mM**, since 100 mM and 1 mM are how they are labelled;
   the working concentration stays in µM. The engine holds µM throughout and the panel
   converts.

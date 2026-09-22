@@ -214,3 +214,40 @@ describe('what sizes the buffer', () => {
     expect(r.recipes.some((x) => x.id === 'substrate')).toBe(false);
   });
 });
+
+describe('a substrate left switched on cannot leak into DERET', () => {
+  const block: CompoundBlock = {
+    id: 'b', name: 'Iso', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
+    vehicle: 'aqueous', extraVolume_ul: 0, excludeFromVehicleMatch: false, logM: [-5], stockBsaPct: null, notes: '',
+  };
+  const exp = (assayType: 'DERET' | 'NanoBiT/BRET'): DilutionExperiment => ({
+    assayType,
+    dmsoOverride: null,
+    addition: { compound_ul: 10, assayBuffer_ul: 80 },
+    dmsoPlacement: 'compound-only',
+    wellBufferExtra_ul: 0,
+    premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
+    // 50 µl/well, as if HiBiT defaults had been loaded before switching to DERET
+    substrate: { ...defaultSubstrate('HiBiT'), enabled: true },
+    fluorescein: defaultFluorescein(),
+    tb: defaultTb(),
+    blocks: [block],
+    bsa: { enabled: false, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' },
+    bufferNotes: '',
+  });
+
+  it('leaves the well volume and the addition factor alone', () => {
+    const deret = computeDilutions(exp('DERET'));
+    // 80 µl buffer + 10 µl compound only — the 50 µl substrate does not exist here
+    expect(deret.additionFactor).toBeCloseTo(9, 12);
+    expect(deret.substrate.enabled).toBe(false);
+    // the same experiment as NanoBiT/BRET does count it: (80 + 50 + 10) / 10
+    expect(computeDilutions(exp('NanoBiT/BRET')).additionFactor).toBeCloseTo(14, 12);
+  });
+
+  it('keeps it out of the premixes and the tubes', () => {
+    const deret = computeDilutions(exp('DERET'));
+    expect(deret.recipes.some((r) => r.id === 'substrate')).toBe(false);
+    expect(deret.blocks[0].rows[0].tubeConc_uM).toBeCloseTo(10 * 9, 9);
+  });
+});

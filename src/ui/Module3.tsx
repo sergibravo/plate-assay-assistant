@@ -113,11 +113,13 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
               onChange={(v) => setExp({ addition: { ...exp.addition, assayBuffer_ul: v } })}
             />
             {wellSubstrate && (
-              <div className="field">
-                <label>Substrate added</label>
-                <output className="calc">{fmtVol(wellSubstrate.volumePerWell_ul, 1)}</output>
-                <span className="unit">µl per well</span>
-              </div>
+              <NumField
+                label="Substrate added"
+                unit="µl per well"
+                value={wellSubstrate.volumePerWell_ul}
+                step={5}
+                onChange={(v) => setSub({ volumePerWell_ul: v })}
+              />
             )}
             <NumField
               label="Compound solution added"
@@ -147,13 +149,11 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
               onChange={(v) => setExp({ wellBufferExtra_ul: v })}
             />
             <p className="hint">
-              The well count is not typed: each dilution step prepares its "vol for wells", and
-              every well takes {fmtVol(exp.addition.compound_ul, 1)} µl of it. Wells the compounds
-              never reach — buffer-only controls, a vehicle channel — go in as extra well buffer.
-              Any of these may be 0 — 50 µl of compound into an empty well is a 1× addition.
+              All three are yours to set — the assay's defaults are only a starting point, and the
+              substrate volume here is the same setting as in the Substrate panel. Any of them may
+              be 0: 50 µl of compound into an empty well is a legal 1× addition.
               Each tube is prepared at {round(result.additionFactor, 3)}× the concentration you
               type, so the logM in the tables below is what the <strong>cells</strong> finally see.
-              {wellSubstrate ? ' The substrate volume is set in the Substrate panel.' : ''}
             </p>
           </div>
           <div>

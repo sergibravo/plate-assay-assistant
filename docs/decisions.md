@@ -143,6 +143,9 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
   three independent volumes and any may be zero, so "nothing in the well, add 50 µl at 1×" is
   expressible. The previous model asked for "what is already in the well", which forced an
   order of pipetting and rejected an empty well.
+- **The substrate volume is editable wherever it is shown.** It appeared read-only in the
+  addition panel, which read as fixed by the assay when it is only a default. Both panels now
+  edit the same setting.
 - **Defaults are per assay, not per current selection.** One button per assay, so the HiBiT
   recipe can be loaded without first switching the whole experiment over.
 - Assay defaults are **offered, never imposed**: a button loads the usual recipe for the

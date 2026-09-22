@@ -11,7 +11,7 @@ import type { Vehicle } from '../calc/types';
 import { fmtVol, logMToUM, NEGLIGIBLE_RELATIVE, round } from '../calc/units';
 import { exportDilutionsXlsx } from '../export/dilutionsheet';
 import { defaultSubstrate, newSubstrateComponent, type SubstrateReference } from '../calc/substrate';
-import { emptyDilutions, newCompoundBlock, type Project } from '../state/project';
+import { emptyDilutions, newBufferChannel, newCompoundBlock, type Project } from '../state/project';
 import { CalcField, ConfirmButton, Legend, NumField, Panel, Segmented, Warnings } from './components';
 
 const ASSAY_TYPES = Object.keys(ASSAY_PROFILES) as AssayType[];
@@ -48,6 +48,9 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
   const wellVolume =
     exp.addition.assayBuffer_ul + (wellSubstrate?.volumePerWell_ul ?? 0) + exp.addition.compound_ul;
   const setSub = (patch: Partial<typeof sub>) => setExp({ substrate: { ...sub, ...patch } });
+  const setChannel = (id: string, patch: Partial<(typeof exp.bufferChannels)[number]>) =>
+    setExp({ bufferChannels: exp.bufferChannels.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
+
   const setComponent = (id: string, patch: Partial<(typeof sub.components)[number]>) =>
     setSub({ components: sub.components.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
 
@@ -228,18 +231,6 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                 <>No compound uses a DMSO stock, so nothing needs matching — every tube is made up with plain {result.assay.diluent}.</>
               )}
             </p>
-            <NumField
-              label="Vehicle alone"
-              unit="µl"
-              value={exp.vehicleChannel_ul}
-              step={100}
-              onChange={(v) => setExp({ vehicleChannel_ul: v })}
-            />
-            <p className="hint">
-              Vehicle with no compound in it. It goes into wells like a compound does, so it is
-              prepared as more of {result.target > 0 ? 'the DMSO diluent' : 'the plain diluent'} —
-              but it has no dilution series, so it never appears as a compound below.
-            </p>
             <div className="field" style={{ gridTemplateColumns: '1fr' }}>
               <label style={{ marginBottom: 4 }}>Buffer recipes / notes (printed on the bench sheet)</label>
             </div>
@@ -344,13 +335,13 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                         </td>
                         <td className="calc num">{fmtVol(result.bufferUse.compounds_ul, 1)}</td>
                       </tr>
-                      {result.bufferUse.vehicle_ul > 0 && (
+                      {result.bufferUse.channels_ul > 0 && (
                         <tr>
                           <td style={{ paddingLeft: 22 }}>
-                            …of that, vehicle alone
-                            <em className="sub"> (no compound in it)</em>
+                            …of that, buffer channels
+                            <em className="sub"> (no compound in them)</em>
                           </td>
-                          <td className="num">{fmtVol(result.bufferUse.vehicle_ul, 1)}</td>
+                          <td className="num">{fmtVol(result.bufferUse.channels_ul, 1)}</td>
                           <td className="num">—</td>
                         </tr>
                       )}
@@ -595,9 +586,14 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                         {r.name}
                         <em className="sub" style={{ display: 'block' }}>
                           from {r.baseName}
-                          {result.bufferUse.vehicle_ul > 0 && r.id === (result.target > 0 ? 'dmso' : 'normal')
-                            ? ` · includes ${fmtVol(result.bufferUse.vehicle_ul, 1)} µl vehicle alone`
-                            : ''}
+                          {(() => {
+                            const inThis = result.bufferChannels.filter(
+                              (c) => c.required_ul > 0 && (c.matched ? 'dmso' : 'normal') === r.id,
+                            );
+                            return inThis.length > 0
+                              ? ` · includes ${inThis.map((c) => `${fmtVol(c.required_ul, 1)} µl ${c.name || 'buffer channel'}`).join(', ')}`
+                              : '';
+                          })()}
                         </em>
                       </td>
                       <td className="num">{fmtVol(r.required_ul, 1)}</td>
@@ -850,6 +846,64 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
           </Panel>
         );
       })}
+
+      <Panel title="Buffer channels — wells with no compound in them">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th style={{ width: 130 }}>Made of</th>
+              <th className="num" style={{ width: 120 }}>Vol for wells (µl)</th>
+              <th className="num" style={{ width: 110 }}>Extra (µl)</th>
+              <th className="num" style={{ width: 110 }}>Total (µl)</th>
+              <th className="no-print" style={{ width: 40 }} />
+            </tr>
+          </thead>
+          <tbody>
+            {exp.bufferChannels.map((c) => {
+              const res = result.bufferChannels.find((x) => x.id === c.id);
+              return (
+                <tr key={c.id}>
+                  <td className="input">
+                    <input style={{ textAlign: 'left' }} value={c.name} placeholder="e.g. vehicle alone" onChange={(e) => setChannel(c.id, { name: e.target.value })} />
+                  </td>
+                  <td className="input">
+                    <select
+                      value={c.vehicle}
+                      onChange={(e) => setChannel(c.id, { vehicle: e.target.value as Vehicle })}
+                      style={{ width: '100%', border: 'none', background: 'transparent', font: 'inherit', padding: '4px 7px' }}
+                    >
+                      <option value="DMSO">matched vehicle (DMSO)</option>
+                      <option value="aqueous">plain buffer (aqueous)</option>
+                    </select>
+                  </td>
+                  <td className="input">
+                    <input type="number" step="any" value={c.volume_ul} onChange={(e) => setChannel(c.id, { volume_ul: Number(e.target.value) })} />
+                  </td>
+                  <td className="input">
+                    <input type="number" step="any" value={c.extraVolume_ul} onChange={(e) => setChannel(c.id, { extraVolume_ul: Number(e.target.value) })} />
+                  </td>
+                  <td className="calc num">{fmtVol(res?.required_ul ?? 0, 1)}</td>
+                  <td className="no-print">
+                    <ConfirmButton onConfirm={() => setExp({ bufferChannels: exp.bufferChannels.filter((x) => x.id !== c.id) })}>✕</ConfirmButton>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <p className="hint">
+          Buffer that goes into wells without a compound — a vehicle control, a buffer-only
+          channel. <strong>Matched vehicle</strong> is made of the DMSO diluent, so those wells see
+          the same DMSO as the treated ones{result.target > 0 ? ` (${round(result.target * 100, 3)} %)` : ' (nothing to match right now, so it is plain buffer)'};{' '}
+          <strong>plain buffer</strong> carries none. They have no dilution series, so they never
+          become compounds — but their volume counts towards the diluents, the batch
+          {result.fluorescein.enabled ? ' and the fluorescein in it' : ''}.
+        </p>
+        <button className="btn no-print" style={{ marginTop: 8 }} onClick={() => setExp({ bufferChannels: [...exp.bufferChannels, newBufferChannel(`Buffer ${exp.bufferChannels.length + 1}`)] })}>
+          + Add buffer channel
+        </button>
+      </Panel>
 
       <div className="no-print" style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
         <button

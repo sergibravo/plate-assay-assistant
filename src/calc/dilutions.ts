@@ -190,6 +190,23 @@ export interface DiluentRecipe {
   overridden: boolean;
 }
 
+/**
+ * A buffer channel: so much of a diluent, with no compound in it.
+ *
+ * `vehicle` says which diluent it is made of, using the same words as a compound's stock:
+ * `DMSO` for a vehicle control, which must carry the matched DMSO so the cells see the same
+ * vehicle as the treated wells, and `aqueous` for a plain buffer channel.
+ */
+export interface BufferChannel {
+  id: string;
+  name: string;
+  /** What the plate takes. */
+  volume_ul: number;
+  /** Extra µl on top. */
+  extraVolume_ul: number;
+  vehicle: Vehicle;
+}
+
 /** One compound's dilution series — a "block" in the spreadsheet. */
 export interface CompoundBlock {
   id: string;
@@ -233,11 +250,11 @@ export interface DilutionExperiment {
   /** Extra µl of well buffer on top, for anything the well count does not capture. */
   wellBufferExtra_ul: number;
   /**
-   * Vehicle alone — buffer carrying the matched DMSO but no compound. It goes into wells
-   * like a compound does, so its volume is added to the diluent the compounds use, but it
-   * is not a compound: it has no dilution series and no block of its own.
+   * Buffer that goes into wells without a compound in it — a vehicle control, a buffer-only
+   * channel. Each is listed beside the compounds because that is what it competes with for
+   * buffer, but none has a dilution series: it is simply more of one of the two diluents.
    */
-  vehicleChannel_ul: number;
+  bufferChannels: BufferChannel[];
   /**
    * Prepare more (or less) of a diluent than suggested. `null` = follow the suggestion.
    * Someone topping up a stock bottle, or wanting a round 5 ml, sets it here.
@@ -332,9 +349,19 @@ export interface DilutionResult {
   bufferUse: {
     wells_ul: number;
     compounds_ul: number;
-    vehicle_ul: number;
+    /** Buffer channels — vehicle controls and the like, included in `compounds_ul`. */
+    channels_ul: number;
     substrate_ul: number;
   };
+  /** Each buffer channel, sized and told which diluent it is made of. */
+  bufferChannels: {
+    id: string;
+    name: string;
+    vehicle: Vehicle;
+    required_ul: number;
+    /** True when it carries the matched DMSO rather than being plain buffer. */
+    matched: boolean;
+  }[];
   /** DERET only; inert for the other assays. */
   fluorescein: FluoresceinResult;
   tb: TbResult;
@@ -782,14 +809,22 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
   }
 
   /*
-   * Vehicle alone is the compounds' own diluent with no compound in it, so it is simply more
-   * of that diluent: DMSO buffer when anything is matched, plain buffer when nothing is.
+   * A buffer channel is one of the two diluents with no compound in it, so it is simply more
+   * of that diluent. A vehicle control only counts as DMSO buffer when there is DMSO to
+   * match; with nothing matched it is plain buffer like any other channel.
    */
-  const vehicle_ul = Math.max(0, exp.vehicleChannel_ul ?? 0);
-  const totalNormalBuffer_ul =
-    blocks.reduce((a, b) => a + b.totalNormalBuffer_ul, 0) + (target > 0 ? 0 : vehicle_ul);
-  const totalDmsoBuffer_ul =
-    blocks.reduce((a, b) => a + b.totalDmsoBuffer_ul, 0) + (target > 0 ? vehicle_ul : 0);
+  const channels = (exp.bufferChannels ?? []).map((c) => ({
+    id: c.id,
+    name: c.name,
+    vehicle: c.vehicle,
+    required_ul: Math.max(0, c.volume_ul) + Math.max(0, c.extraVolume_ul),
+    matched: c.vehicle === 'DMSO' && target > 0,
+  }));
+  const channelsInDmso = channels.reduce((a, c) => a + (c.matched ? c.required_ul : 0), 0);
+  const channelsPlain = channels.reduce((a, c) => a + (c.matched ? 0 : c.required_ul), 0);
+
+  const totalNormalBuffer_ul = blocks.reduce((a, b) => a + b.totalNormalBuffer_ul, 0) + channelsPlain;
+  const totalDmsoBuffer_ul = blocks.reduce((a, b) => a + b.totalDmsoBuffer_ul, 0) + channelsInDmso;
 
   if (exp.bsa.enabled) {
     if (exp.bsa.stockPct <= 0) {
@@ -978,9 +1013,10 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
         (a, id) => a + (recipes.find((r) => r.id === id)?.base_ul ?? 0),
         0,
       ),
-      vehicle_ul,
+      channels_ul: channelsInDmso + channelsPlain,
       substrate_ul: recipes.find((r) => r.id === 'substrate')?.base_ul ?? 0,
     },
+    bufferChannels: channels,
     fluorescein,
     tb,
     warnings: [

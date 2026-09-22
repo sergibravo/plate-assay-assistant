@@ -225,3 +225,31 @@ describe('reordering the DNA inventory', () => {
     expect(first.map((e) => e.dnaStockId)).toEqual([c.id, b.id, a.id]);
   });
 });
+
+describe('vehicle volume → buffer channel', () => {
+  const base = (dilutions: Record<string, unknown>) => ({
+    version: 5,
+    name: 'old', createdAt: '', updatedAt: '', notes: '',
+    transfection: { wellsPerCondition: 12, dna_ng_per_well: 100, optimem_ul_per_well: 10, peiDnaRatio: 3, pei_ug_per_ul: 1, dmem_ul_per_well: 100, cells_k_per_well: 30, transfectionMixExtra_ul: 0, cellSuspensionExtra_ul: 0 },
+    dnaStocks: [], compounds: [],
+    grid: { cols: 1, rowGroups: 1, colLabels: [''], rowGroupLabels: [''], conditions: [[]] },
+    dilutions: { assayType: 'NanoBiT/BRET', dmsoOverride: null, addition: { compound_ul: 10, assayBuffer_ul: 80 }, dmsoPlacement: 'compound-only', blocks: [], bsa: { enabled: false, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' }, bufferNotes: '', ...dilutions },
+  });
+
+  it('carries the volume over as one matched channel', () => {
+    const m = migrate(base({ vehicleChannel_ul: 300 })) as any;
+    expect(m.dilutions.bufferChannels).toHaveLength(1);
+    expect(m.dilutions.bufferChannels[0]).toMatchObject({ name: 'Vehicle alone', volume_ul: 300, vehicle: 'DMSO' });
+    expect(m.dilutions.vehicleChannel_ul).toBeUndefined();
+  });
+
+  it('adds nothing when there was no vehicle channel', () => {
+    expect((migrate(base({ vehicleChannel_ul: 0 })) as any).dilutions.bufferChannels).toEqual([]);
+    expect((migrate(base({})) as any).dilutions.bufferChannels).toEqual([]);
+  });
+
+  it('leaves channels alone once a project already has them', () => {
+    const existing = [{ id: 'x', name: 'mine', volume_ul: 42, extraVolume_ul: 0, vehicle: 'aqueous' }];
+    expect((migrate(base({ bufferChannels: existing })) as any).dilutions.bufferChannels).toEqual(existing);
+  });
+});

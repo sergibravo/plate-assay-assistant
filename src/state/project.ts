@@ -4,7 +4,7 @@
  * localStorage autosave for convenience. No server, no database.
  */
 
-import type { CompoundBlock, DilutionExperiment } from '../calc/dilutions';
+import type { BufferChannel, CompoundBlock, DilutionExperiment } from '../calc/dilutions';
 import { defaultFluorescein, defaultTb } from '../calc/deret';
 import { defaultSubstrate } from '../calc/substrate';
 import type {
@@ -152,6 +152,10 @@ export function enableCondition(c: TransfectionCondition, stocks: DnaStock[]): T
 }
 
 /** A fresh compound block with room for a dose-response series. */
+export function newBufferChannel(name = 'Vehicle alone'): BufferChannel {
+  return { id: uid('buf'), name, volume_ul: 0, extraVolume_ul: 0, vehicle: 'DMSO' };
+}
+
 export function newCompoundBlock(name = '', rows = 8): CompoundBlock {
   return {
     id: uid('cmp'),
@@ -176,7 +180,7 @@ export function emptyDilutions(): DilutionExperiment {
     dmsoPlacement: 'compound-only',
     wells: null,
     wellBufferExtra_ul: 0,
-    vehicleChannel_ul: 0,
+    bufferChannels: [],
     premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
     substrate: defaultSubstrate('NanoBiT/BRET'),
     fluorescein: defaultFluorescein(),
@@ -306,7 +310,15 @@ export function migrate(raw: any): Project {
   p.dilutions.substrate = p.dilutions.substrate ?? defaultSubstrate(p.dilutions.assayType ?? 'NanoBiT/BRET');
   p.dilutions.wells = p.dilutions.wells ?? null;
   p.dilutions.wellBufferExtra_ul = p.dilutions.wellBufferExtra_ul ?? 0;
-  p.dilutions.vehicleChannel_ul = p.dilutions.vehicleChannel_ul ?? 0;
+  // The single "vehicle alone" volume became a list of buffer channels. Read the stored
+  // object, not the merged one: the defaults have already supplied an empty list.
+  if (storedDilutions.bufferChannels === undefined) {
+    const vehicle = Number(storedDilutions.vehicleChannel_ul) || 0;
+    p.dilutions.bufferChannels = vehicle > 0
+      ? [{ id: uid('buf'), name: 'Vehicle alone', volume_ul: vehicle, extraVolume_ul: 0, vehicle: 'DMSO' }]
+      : [];
+  }
+  delete p.dilutions.vehicleChannel_ul;
   p.dilutions.fluorescein = { ...defaultFluorescein(), ...(p.dilutions.fluorescein ?? {}) };
   p.dilutions.tb = { ...defaultTb(), ...(p.dilutions.tb ?? {}) };
   // The addition used to be split between a global in-well factor and a per-block dilution

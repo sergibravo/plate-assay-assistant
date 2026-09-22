@@ -88,7 +88,7 @@ describe('DERET inside the experiment', () => {
     dmsoPlacement: 'all-buffers',
     wells: null,
   wellBufferExtra_ul: 0,
-  vehicleChannel_ul: 0,
+  bufferChannels: [],
     premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
     substrate: { ...defaultSubstrate('DERET'), enabled: false },
     fluorescein: defaultFluorescein(),
@@ -171,7 +171,7 @@ describe('what sizes the buffer', () => {
     dmsoPlacement: 'all-buffers',
     wells: null,
   wellBufferExtra_ul: 0,
-  vehicleChannel_ul: 0,
+  bufferChannels: [],
     premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
     substrate: { ...defaultSubstrate('DERET'), enabled: false },
     fluorescein: defaultFluorescein(),
@@ -231,7 +231,7 @@ describe('a substrate left switched on cannot leak into DERET', () => {
     dmsoPlacement: 'compound-only',
     wells: null,
   wellBufferExtra_ul: 0,
-  vehicleChannel_ul: 0,
+  bufferChannels: [],
     premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
     // 50 µl/well, as if HiBiT defaults had been loaded before switching to DERET
     substrate: { ...defaultSubstrate('HiBiT'), enabled: true },
@@ -270,7 +270,7 @@ describe('sizing the buffer by the plate, and the vehicle channel', () => {
     dmsoPlacement: 'all-buffers',
     wells: null,
     wellBufferExtra_ul: 0,
-    vehicleChannel_ul: 0,
+    bufferChannels: [],
     premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
     substrate: { ...defaultSubstrate('DERET'), enabled: false },
     fluorescein: defaultFluorescein(),
@@ -300,14 +300,21 @@ describe('sizing the buffer by the plate, and the vehicle channel', () => {
     expect(compounds_ul).toBeGreaterThan(0);
   });
 
-  it('vehicle alone is more of the compounds\' own diluent, and is not a compound', () => {
+  const vehicleChannel = (volume_ul: number, vehicle: 'aqueous' | 'DMSO' = 'DMSO') => [
+    { id: 'v', name: 'Vehicle alone', volume_ul, extraVolume_ul: 0, vehicle },
+  ];
+
+  it('a buffer channel is more of the compounds\' own diluent, and is not a compound', () => {
     const without = computeDilutions(exp({ wells: 96 }));
-    const withVehicle = computeDilutions(exp({ wells: 96, vehicleChannel_ul: 300 }));
+    const withVehicle = computeDilutions(exp({ wells: 96, bufferChannels: vehicleChannel(300) }));
 
     // it lands in the matched diluent, because it has to carry the same DMSO
     expect(withVehicle.totalDmsoBuffer_ul).toBeCloseTo(without.totalDmsoBuffer_ul + 300, 9);
     expect(withVehicle.totalNormalBuffer_ul).toBeCloseTo(without.totalNormalBuffer_ul, 9);
-    expect(withVehicle.bufferUse.vehicle_ul).toBe(300);
+    expect(withVehicle.bufferUse.channels_ul).toBe(300);
+    expect(withVehicle.bufferChannels).toEqual([
+      { id: 'v', name: 'Vehicle alone', vehicle: 'DMSO', required_ul: 300, matched: true },
+    ]);
 
     // and it never becomes a block at the bottom of the page
     expect(withVehicle.blocks).toHaveLength(1);
@@ -316,15 +323,62 @@ describe('sizing the buffer by the plate, and the vehicle channel', () => {
 
   it('with nothing to match, vehicle alone is just plain diluent', () => {
     const aqueous = { ...block, vehicle: 'aqueous' as const };
-    const r = computeDilutions(exp({ wells: 96, blocks: [aqueous], vehicleChannel_ul: 300, dmsoPlacement: 'compound-only' }));
+    const r = computeDilutions(exp({ wells: 96, blocks: [aqueous], bufferChannels: vehicleChannel(300), dmsoPlacement: 'compound-only' }));
     expect(r.target).toBe(0);
     expect(r.totalNormalBuffer_ul).toBeGreaterThanOrEqual(300);
     expect(r.totalDmsoBuffer_ul).toBe(0);
+    expect(r.bufferChannels[0].matched).toBe(false); // nothing to match it to
   });
 
-  it('the fluorescein grows with the vehicle channel, since it is more buffer', () => {
+  it('the fluorescein grows with a buffer channel, since it is more buffer', () => {
     const without = computeDilutions(exp({ wells: 96 }));
-    const withVehicle = computeDilutions(exp({ wells: 96, vehicleChannel_ul: 3000 }));
+    const withVehicle = computeDilutions(exp({ wells: 96, bufferChannels: vehicleChannel(3000) }));
     expect(withVehicle.fluorescein.intoBuffer!.stock_ul).toBeGreaterThan(without.fluorescein.intoBuffer!.stock_ul);
+  });
+});
+
+describe('buffer channels beside the compounds', () => {
+  const block: CompoundBlock = {
+    id: 'b', name: 'Nebi', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
+    vehicle: 'DMSO', extraVolume_ul: 0, excludeFromVehicleMatch: false, logM: [-5], stockBsaPct: null, notes: '',
+  };
+  const exp = (channels: DilutionExperiment['bufferChannels']): DilutionExperiment => ({
+    assayType: 'DERET',
+    dmsoOverride: null,
+    addition: { compound_ul: 50, assayBuffer_ul: 50 },
+    dmsoPlacement: 'all-buffers',
+    wells: 96,
+    wellBufferExtra_ul: 0,
+    bufferChannels: channels,
+    premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
+    substrate: { ...defaultSubstrate('DERET'), enabled: false },
+    fluorescein: defaultFluorescein(),
+    tb: defaultTb(),
+    blocks: [block],
+    bsa: { enabled: false, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' },
+    bufferNotes: '',
+  });
+
+  it('several channels each go to the diluent their vehicle names', () => {
+    const r = computeDilutions(exp([
+      { id: 'a', name: 'Vehicle control', volume_ul: 400, extraVolume_ul: 100, vehicle: 'DMSO' },
+      { id: 'b', name: 'Buffer only', volume_ul: 800, extraVolume_ul: 0, vehicle: 'aqueous' },
+    ]));
+    expect(r.bufferChannels.map((c) => c.required_ul)).toEqual([500, 800]);
+    expect(r.bufferChannels.map((c) => c.matched)).toEqual([true, false]);
+    expect(r.bufferUse.channels_ul).toBe(1300);
+  });
+
+  it('their volumes reach the batch, and so the fluorescein', () => {
+    const none = computeDilutions(exp([]));
+    const some = computeDilutions(exp([{ id: 'a', name: 'Vehicle', volume_ul: 4000, extraVolume_ul: 0, vehicle: 'DMSO' }]));
+    const batch = (r: typeof none) => r.recipes.find((x) => x.id === 'assay-buffer')!.prepare_ul;
+    expect(batch(some)).toBeGreaterThan(batch(none));
+    expect(some.fluorescein.intoBuffer!.stock_ul).toBeGreaterThan(none.fluorescein.intoBuffer!.stock_ul);
+  });
+
+  it('a channel is never a compound block', () => {
+    const r = computeDilutions(exp([{ id: 'a', name: 'Vehicle', volume_ul: 400, extraVolume_ul: 0, vehicle: 'DMSO' }]));
+    expect(r.blocks.map((b) => b.name)).toEqual(['Nebi']);
   });
 });

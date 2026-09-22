@@ -36,7 +36,7 @@ const experiment = (blocks: CompoundBlock[], over: Partial<DilutionExperiment> =
   dmsoPlacement: 'compound-only' as const,
   wells: null,
   wellBufferExtra_ul: 0,
-  vehicleChannel_ul: 0,
+  bufferChannels: [],
   premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
   substrate: { ...defaultSubstrate('NanoBiT/BRET'), enabled: false, extraVolume_ul: 0 },
   blocks,

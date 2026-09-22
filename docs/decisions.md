@@ -231,7 +231,11 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
   converts.
 - **Well counts are derived *or* typed.** The count the series covers is always shown, and a
   typed count overrides it — the plate is what you know, and a series rarely fills it exactly.
-- **Vehicle alone is a volume, not a compound.** It goes into wells like a compound does, so
+- **Buffer channels are listed beside the compounds, as rows rather than blocks.** A single
+  "vehicle alone" volume was not enough: there can be several, and each needs a name and a
+  say in which diluent it is made of. They have no dilution series, so they never become
+  compound blocks, but their volume reaches the diluents, the batch and its fluorescein.
+- (superseded) Vehicle alone was a single volume, not a compound. It goes into wells like a compound does, so
   it is prepared as more of the matched diluent and counted in every buffer total, but it has
   no dilution series and never appears as a block at the bottom of the page.
 - **The fluorescein panel says what the batch is for** — cells versus compounds, needed

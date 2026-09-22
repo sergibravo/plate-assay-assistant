@@ -135,10 +135,13 @@ always says what the compound series covers; setting `wells` overrides it with t
 actually have, and `wellBufferExtra_ul` adds anything neither captures. Terbium keeps its own
 well count, since it labels cells before any compound exists.
 
-**Vehicle alone** (`vehicleChannel_ul`) is the compounds' diluent with no compound in it, so
-it is simply more of that diluent — DMSO buffer when anything is matched, plain buffer when
-nothing is. It has no dilution series, so it never becomes a block. `bufferUse` splits the
-batch into what goes to the cells, to the compounds (vehicle included) and to the substrate.
+**Buffer channels** (`bufferChannels`) are wells with no compound in them — a vehicle control,
+a buffer-only channel. Each is `volume_ul + extraVolume_ul` of one of the two diluents, named
+by the same word a compound's stock uses: `DMSO` for a matched vehicle control, `aqueous` for
+plain buffer. A DMSO channel only counts as DMSO buffer when there is something to match; with
+nothing matched it is plain buffer like any other. None has a dilution series, so none becomes
+a block. `bufferUse` splits the batch into what goes to the cells, to the compounds (channels
+included, and reported separately) and to the substrate.
 
 Fluorescein goes into the **batch** every other diluent is drawn from, so the cells' buffer
 and the compound solutions carry it identically and the acceptor never changes when a

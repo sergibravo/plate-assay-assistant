@@ -33,6 +33,13 @@ works, so treat the JSON file as the real save.
 To give the file a version bump before sending, change `version` in `package.json` and
 rebuild — the version is part of the filename so two copies can be told apart.
 
+## Printing a bench sheet
+
+The **Print bench sheet** button on each module prints what is on screen, minus the controls.
+Checked in **portrait** with the browser's **"scale to fit"** (or "fit to page width") — the
+page sets portrait and margins itself, so that is the only setting to touch. Tables break
+between rows rather than through them, and headers repeat on each page.
+
 Run the calculation tests at any time:
 
 ```bash

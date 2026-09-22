@@ -205,10 +205,18 @@ tr.drop-target td { border-top: 2px solid var(--accent); }
 .hint { color: var(--muted); font-size: 11.5px; margin: 4px 0 0; }
 .stub { color: var(--muted); padding: 48px; text-align: center; }
 
+/* Portrait with a normal margin, which is what the bench sheets were checked against.
+   Browsers still need "scale to fit" for the widest grids; the page is built so that is
+   the only setting anyone has to touch. */
+@page { size: A4 portrait; margin: 12mm; }
+
 @media print {
   .app-header, .tabs, .no-print { display: none !important; }
   body { background: #fff; }
   .panel { border: none; box-shadow: none; padding: 0; break-inside: avoid; }
   main { padding: 0; }
   .grid-scroll { overflow: visible; }
+  table { break-inside: auto; }
+  tr, .cond-card, .pipette-box { break-inside: avoid; }
+  thead { display: table-header-group; }
 }

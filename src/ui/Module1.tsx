@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { computeGrid, masterMix, perCondition, validateParams } from '../calc/transfection';
 import type { DnaStock, PlateFormat } from '../calc/types';
-import { fmtVol, round } from '../calc/units';
+import { fmtUl, round } from '../calc/units';
 import { exportTransfectionXlsx } from '../export/benchsheet';
 import {
   addColumn,
@@ -97,7 +97,7 @@ export function Module1({ project, update }: { project: Project; update: (p: Pro
           <div>
             <h3>Calculated summary (per condition)</h3>
             <CalcField label="Total DNA" unit="ng" value={per.totalDna_ng} decimals={3} />
-            <CalcField label="PEI" unit="µl" value={per.pei_ul} decimals={3} />
+            <CalcField label="PEI" unit="µl" value={per.pei_ul} />
             <CalcField label="OptiMEM for DNA" unit="µl" value={per.optimemForDna_ul} />
             <CalcField label="OptiMEM for PEI" unit="µl" value={per.optimemForPei_ul} />
             <CalcField label="DMEM" unit="µl" value={per.dmem_ul} />
@@ -201,19 +201,19 @@ export function Module1({ project, update }: { project: Project; update: (p: Pro
             </div>
             <div className="pipette-box">
               <CalcField label="Total PEI" unit="µl" value={mix.totalPei_ul} strong />
-              <CalcField label="Total OptiMEM for PEI" unit="µl" value={mix.totalOptimemForPei_ul} decimals={0} strong />
+              <CalcField label="Total OptiMEM for PEI" unit="µl" value={mix.totalOptimemForPei_ul} strong />
             </div>
             <p className="hint">
-              Pipette these two into one tube — {fmtVol(mix.totalPei_ul + mix.totalOptimemForPei_ul)} µl
-              total: {gridResult.activeCount || 1} condition{gridResult.activeCount === 1 ? '' : 's'} plus {fmtVol(p.transfectionMixExtra_ul)} µl extra.
+              Pipette these two into one tube — {fmtUl(mix.totalPei_ul + mix.totalOptimemForPei_ul)} µl
+              total: {gridResult.activeCount || 1} condition{gridResult.activeCount === 1 ? '' : 's'} plus {fmtUl(p.transfectionMixExtra_ul)} µl extra.
               The OptiMEM is rounded up to whole µl — it is the diluent, so the PEI:DNA ratio is
               untouched.
             </p>
-            <CalcField label="PEI per condition" unit="µl" value={mix.peiPerCondition_ul} decimals={3} />
+            <CalcField label="PEI per condition" unit="µl" value={mix.peiPerCondition_ul} />
             <CalcField label="OptiMEM for PEI / condition" unit="µl" value={mix.optimemForPeiPerCondition_ul} />
           </div>
           <div>
-            <h3>Cell suspension <span className="sub">+{fmtVol(p.cellSuspensionExtra_ul)} µl extra</span></h3>
+            <h3>Cell suspension <span className="sub">+{fmtUl(p.cellSuspensionExtra_ul)} µl extra</span></h3>
             <div className="pipette-box">
               <CalcField label="DMEM total" unit="µl" value={mix.dmemTotal_ul} strong />
               <CalcField label="Total cells needed" unit="k cells" value={mix.totalCells_k} decimals={1} strong hint={`= ${round(mix.totalCells_k / 1000, 4)} M`} />
@@ -242,13 +242,13 @@ export function Module1({ project, update }: { project: Project; update: (p: Pro
         <p className="hint no-print" style={{ margin: '0 0 10px' }}>
           {p.optimemMode === 'fixed' ? (
             <>
-              <strong>Fixed volume:</strong> each DNA tube gets the full {fmtVol(per.optimemForDna_ul)} µl
+              <strong>Fixed volume:</strong> each DNA tube gets the full {fmtUl(per.optimemForDna_ul)} µl
               of OptiMEM, so the tube ends up slightly larger once the DNA is added — this is what the
               spreadsheet did.
             </>
           ) : (
             <>
-              <strong>Target final volume:</strong> {fmtVol(per.optimemForDna_ul)} µl is the total each
+              <strong>Target final volume:</strong> {fmtUl(per.optimemForDna_ul)} µl is the total each
               DNA tube should reach, so the OptiMEM added is that minus the DNA volume already in it.
             </>
           )}{' '}
@@ -349,24 +349,24 @@ export function Module1({ project, update }: { project: Project; update: (p: Pro
                               </td>
                             )}
                             <td className="calc num">{round(r.ng, 3)}</td>
-                            <td className="calc num">{fmtVol(r.ul, 3)}</td>
+                            <td className="calc num">{fmtUl(r.ul)}</td>
                           </tr>
                         ))}
                         <tr className="total">
                           <td>TOTAL</td>
                           <td className="num">{round(res.totalPct, 3)}</td>
                           <td className="num">{round(res.totalNg, 2)}</td>
-                          <td className="num">{fmtVol(res.totalUl, 3)}</td>
+                          <td className="num">{fmtUl(res.totalUl)}</td>
                         </tr>
                         <tr>
                           <td colSpan={3}>+ OptiMEM</td>
-                          <td className="calc num">{fmtVol(res.optimemForDna_ul)}</td>
+                          <td className="calc num">{fmtUl(res.optimemForDna_ul)}</td>
                         </tr>
                         <tr>
                           <td colSpan={3} className={res.isEmpty ? '' : res.pctOk ? 'ok' : 'bad'}>
                             {res.isEmpty ? '(unused)' : res.pctOk ? '✓ OK · tube total' : '⚠ ≠ 100 % · tube total'}
                           </td>
-                          <td className="calc num">{fmtVol(res.tubeTotal_ul)}</td>
+                          <td className="calc num">{fmtUl(res.tubeTotal_ul)}</td>
                         </tr>
                       </tbody>
                     </table>

@@ -10,7 +10,7 @@
 import * as XLSX from 'xlsx-js-style';
 import type { DnaMixResult, MasterMixTotals, PerConditionTotals } from '../calc/transfection';
 import type { TransfectionParams } from '../calc/types';
-import { round } from '../calc/units';
+import { round, roundUl } from '../calc/units';
 import { slug, triggerDownload, type Project } from '../state/project';
 
 type CellValue = string | number | null;
@@ -107,23 +107,23 @@ export function transfectionBenchSheetRows(
     [],
     section('PER CONDITION'),
     param('Total DNA', round(per.totalDna_ng, 3), 'ng'),
-    param('PEI', round(per.pei_ul, 3), 'µl'),
-    param('OptiMEM for DNA', round(per.optimemForDna_ul, 3), 'µl'),
-    param('OptiMEM for PEI', round(per.optimemForPei_ul, 3), 'µl'),
-    param('DMEM', round(per.dmem_ul, 3), 'µl'),
+    param('PEI', roundUl(per.pei_ul), 'µl'),
+    param('OptiMEM for DNA', roundUl(per.optimemForDna_ul), 'µl'),
+    param('OptiMEM for PEI', roundUl(per.optimemForPei_ul), 'µl'),
+    param('DMEM', roundUl(per.dmem_ul), 'µl'),
     param('Cells', round(per.cells_k, 2), 'k cells'),
     [],
     section(`PEI MASTER MIX — ${mix.nConditions} conditions + ${round(p.transfectionMixExtra_ul, 1)} µl extra`),
     [{ v: 'Pipette these two into one tube:', s: muted() }],
-    [{ v: 'Total PEI', s: pipetteLabel() }, { v: round(mix.totalPei_ul, 2), s: pipette() }, { v: 'µl', s: unit() }],
-    [{ v: 'Total OptiMEM for PEI', s: pipetteLabel() }, { v: round(mix.totalOptimemForPei_ul, 2), s: pipette() }, { v: 'µl', s: unit() }],
-    param('→ combined volume', round(mix.totalPei_ul + mix.totalOptimemForPei_ul, 2), 'µl'),
+    [{ v: 'Total PEI', s: pipetteLabel() }, { v: roundUl(mix.totalPei_ul), s: pipette() }, { v: 'µl', s: unit() }],
+    [{ v: 'Total OptiMEM for PEI', s: pipetteLabel() }, { v: roundUl(mix.totalOptimemForPei_ul), s: pipette() }, { v: 'µl', s: unit() }],
+    param('→ combined volume', roundUl(mix.totalPei_ul + mix.totalOptimemForPei_ul), 'µl'),
     [],
     section(`CELL SUSPENSION — ${mix.nConditions} conditions + ${round(p.cellSuspensionExtra_ul, 1)} µl extra`),
-    [{ v: 'DMEM total', s: pipetteLabel() }, { v: round(mix.dmemTotal_ul, 2), s: pipette() }, { v: 'µl', s: unit() }],
+    [{ v: 'DMEM total', s: pipetteLabel() }, { v: roundUl(mix.dmemTotal_ul), s: pipette() }, { v: 'µl', s: unit() }],
     [{ v: 'Total cells needed', s: pipetteLabel() }, { v: round(mix.totalCells_k, 1), s: pipette() }, { v: 'k cells', s: unit() }],
     param('  (= millions)', round(mix.totalCells_k / 1000, 4), 'M'),
-    param('Suspension per condition', round(mix.cellSuspensionPerCondition_ul, 2), 'µl'),
+    param('Suspension per condition', roundUl(mix.cellSuspensionPerCondition_ul), 'µl'),
     [],
     section('DNA STOCKS USED'),
     [
@@ -207,7 +207,7 @@ export function transfectionBenchSheetRows(
           body(r.isFiller ? `${r.name} (filler)` : r.name, false),
           body(round(r.pct, 4)),
           body(round(r.ng, 3)),
-          body(r.ul === null ? '—' : round(r.ul, 3)),
+          body(r.ul === null ? '—' : roundUl(r.ul)),
         ]);
       }
       dnaMixes.push([
@@ -215,21 +215,21 @@ export function transfectionBenchSheetRows(
         totalCell('TOTAL DNA', false),
         totalCell(round(c.totalPct, 4)),
         totalCell(round(c.totalNg, 3)),
-        totalCell(round(c.totalUl, 3)),
+        totalCell(roundUl(c.totalUl)),
       ]);
       dnaMixes.push([
         { v: '', s: label() },
         { v: '+ OptiMEM', s: pipetteLabel() },
         { v: '', s: label() },
         { v: '', s: label() },
-        { v: round(c.optimemForDna_ul, 3), s: pipette() },
+        { v: roundUl(c.optimemForDna_ul), s: pipette() },
       ]);
       dnaMixes.push([
         { v: '', s: label() },
         { v: '= tube total', s: muted() },
         { v: '', s: label() },
         { v: '', s: label() },
-        { v: round(c.tubeTotal_ul, 3), s: { alignment: { horizontal: 'right' }, font: { color: { rgb: MUTED } } } },
+        { v: roundUl(c.tubeTotal_ul), s: { alignment: { horizontal: 'right' }, font: { color: { rgb: MUTED } } } },
       ]);
       dnaMixes.push([
         {

@@ -21,10 +21,29 @@ export function round(x: number, decimals: number): number {
   return Math.round(x * f) / f;
 }
 
-/** Display a volume in µl: 2 dp, trailing zeros trimmed, "—" when unknown. */
+/** Display a number: trailing zeros trimmed, "—" when unknown. */
 export function fmtVol(x: number | null | undefined, decimals = 2): string {
   if (x === null || x === undefined || !Number.isFinite(x)) return '—';
   return String(round(x, decimals));
+}
+
+/**
+ * Volumes are shown to the precision the pipettes can deliver: 0.01 µl up to 10 µl, where a
+ * P2/P10 is used, and 0.1 µl above that, where a P20 or larger is. Beyond that the digits
+ * are noise — nobody can pipette 47.283 µl — and they make a bench sheet harder to read.
+ *
+ * Display only. Everything is computed at full precision and rounded at the last moment.
+ */
+export const PIPETTE_SMALL_MAX_UL = 10;
+
+export function roundUl(x: number): number {
+  return round(x, Math.abs(x) <= PIPETTE_SMALL_MAX_UL ? 2 : 1);
+}
+
+/** `roundUl` for display, with "—" when the value is unknown. */
+export function fmtUl(x: number | null | undefined): string {
+  if (x === null || x === undefined || !Number.isFinite(x)) return '—';
+  return String(roundUl(x));
 }
 
 /** logM → µM. `10^logM` is molar; ×1e6 gives µM. */

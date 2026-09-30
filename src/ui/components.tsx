@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Warning } from '../calc/types';
-import { fmtVol } from '../calc/units';
+import { fmtUl, fmtVol } from '../calc/units';
 
 export function Panel({ title, children, actions }: { title: string; children: ReactNode; actions?: ReactNode }) {
   return (
@@ -142,7 +142,7 @@ export function CalcField({
   label,
   unit,
   value,
-  decimals = 2,
+  decimals,
   hint,
   strong,
 }: {
@@ -158,7 +158,9 @@ export function CalcField({
   return (
     <div className={`field${strong ? ' strong' : ''}`}>
       <label>{label}</label>
-      <output className="calc">{fmtVol(value, decimals)}</output>
+      <output className="calc">
+        {decimals === undefined && unit.startsWith('µl') ? fmtUl(value) : fmtVol(value, decimals ?? 2)}
+      </output>
       <span className="unit">
         {unit}
         {hint ? <em className="sub"> {hint}</em> : null}

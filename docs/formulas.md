@@ -34,6 +34,14 @@ OptiMEM 10 µl/well, margin 1.2, 8 conditions): 1200 ng · 1440 ng · 3.6 µl ·
 1200 µl · 360 k cells; master mix 34.56 µl PEI, 576 µl OptiMEM, 11520 µl DMEM, 3456 k cells;
 block A2 → 6 ng / 0.6 µl HiBiT, filler 99.5 % → 1194 ng / 1.194 µl, totals 100 / 1200 / 1.794.
 
+### How volumes are shown
+
+Every µl figure is displayed to the precision the pipettes can deliver: **two decimals up to
+10 µl**, where a P2/P10 is used, and **one decimal above it**. Beyond that the digits are
+noise — nobody pipettes 47.283 µl — and they make a bench sheet harder to read. It is display
+only: `roundUl`/`fmtUl` in `src/calc/units.ts` are called at the last moment, and nothing
+rounded ever feeds a calculation.
+
 ### Where the app departs from the sheet's conventions
 
 - **Cells are counted in thousands (k), not millions.** The sheet's `Setup!F4` held

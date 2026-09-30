@@ -8,7 +8,7 @@ import {
   type Placement,
 } from '../calc/dilutions';
 import type { Vehicle } from '../calc/types';
-import { fmtVol, logMToUM, NEGLIGIBLE_RELATIVE, round } from '../calc/units';
+import { fmtUl, logMToUM, NEGLIGIBLE_RELATIVE, round } from '../calc/units';
 import { exportDilutionsXlsx } from '../export/dilutionsheet';
 import { defaultSubstrate, newSubstrateComponent, type SubstrateReference } from '../calc/substrate';
 import { emptyDilutions, newBufferChannel, newCompoundBlock, type Project } from '../state/project';
@@ -127,7 +127,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
               value={exp.addition.compound_ul}
               onChange={(v) => setExp({ addition: { ...exp.addition, compound_ul: v } })}
             />
-            <CalcField label="= well volume" unit="µl" value={wellVolume} decimals={1} />
+            <CalcField label="= well volume" unit="µl" value={wellVolume} />
             <CalcField label="= compound diluted by" unit="×" value={result.additionFactor} decimals={3} strong />
             <CalcField label="= wells the series covers" unit="wells" value={result.wellsCovered} decimals={1} />
             <div className="field">
@@ -294,18 +294,18 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                             {fmtConc(fluo.stock_uM)} → {fmtConc(fluo.intermediate_uM)}
                             <em className="sub" style={{ display: 'block' }}>1:{round(result.fluorescein.intermediate.fold, 1)}</em>
                           </td>
-                          <td className="calc num">{fmtVol(result.fluorescein.intermediate.prepare_ul, 1)}</td>
-                          <td className="calc num">{fmtVol(result.fluorescein.intermediate.stock_ul, 3)}</td>
-                          <td className="calc num">{fmtVol(result.fluorescein.intermediate.diluent_ul, 1)}</td>
+                          <td className="calc num">{fmtUl(result.fluorescein.intermediate.prepare_ul)}</td>
+                          <td className="calc num">{fmtUl(result.fluorescein.intermediate.stock_ul)}</td>
+                          <td className="calc num">{fmtUl(result.fluorescein.intermediate.diluent_ul)}</td>
                         </tr>
                         <tr>
                           <td>
                             {fmtConc(fluo.intermediate_uM)} → {fmtConc(fluo.target_uM)} buffer
                             <em className="sub" style={{ display: 'block' }}>1:{round(result.fluorescein.intoBuffer.fold, 1)}, into the batch</em>
                           </td>
-                          <td className="calc num">{fmtVol(result.fluorescein.intoBuffer.prepare_ul, 1)}</td>
-                          <td className="calc num">{fmtVol(result.fluorescein.intoBuffer.stock_ul, 1)}</td>
-                          <td className="calc num">{fmtVol(result.fluorescein.intoBuffer.diluent_ul, 1)}</td>
+                          <td className="calc num">{fmtUl(result.fluorescein.intoBuffer.prepare_ul)}</td>
+                          <td className="calc num">{fmtUl(result.fluorescein.intoBuffer.stock_ul)}</td>
+                          <td className="calc num">{fmtUl(result.fluorescein.intoBuffer.diluent_ul)}</td>
                         </tr>
                       </tbody>
                     </table>
@@ -321,19 +321,18 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                     </thead>
                     <tbody>
                       <tr>
-                        <td>The cells — {round(result.wellsBuffered, 1)} wells × {fmtVol(exp.addition.assayBuffer_ul, 1)} µl</td>
-                        <td className="num">{fmtVol(result.recipes.find((r) => r.id === 'well')?.required_ul ?? 0, 1)}</td>
-                        <td className="calc num">{fmtVol(result.bufferUse.wells_ul, 1)}</td>
+                        <td>The cells — {round(result.wellsBuffered, 1)} wells × {fmtUl(exp.addition.assayBuffer_ul)} µl</td>
+                        <td className="num">{fmtUl(result.recipes.find((r) => r.id === 'well')?.required_ul ?? 0)}</td>
+                        <td className="calc num">{fmtUl(result.bufferUse.wells_ul)}</td>
                       </tr>
                       <tr>
                         <td>The compounds</td>
                         <td className="num">
-                          {fmtVol(
+                          {fmtUl(
                             ['normal', 'dmso'].reduce((a, id) => a + (result.recipes.find((r) => r.id === id)?.required_ul ?? 0), 0),
-                            1,
                           )}
                         </td>
-                        <td className="calc num">{fmtVol(result.bufferUse.compounds_ul, 1)}</td>
+                        <td className="calc num">{fmtUl(result.bufferUse.compounds_ul)}</td>
                       </tr>
                       {result.bufferUse.channels_ul > 0 && (
                         <tr>
@@ -341,7 +340,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                             …of that, buffer channels
                             <em className="sub"> (no compound in them)</em>
                           </td>
-                          <td className="num">{fmtVol(result.bufferUse.channels_ul, 1)}</td>
+                          <td className="num">{fmtUl(result.bufferUse.channels_ul)}</td>
                           <td className="num">—</td>
                         </tr>
                       )}
@@ -349,7 +348,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                         <td>Batch prepared, rounded up</td>
                         <td className="num" />
                         <td className="num">
-                          {fmtVol(result.recipes.find((r) => r.id === 'assay-buffer')?.prepare_ul ?? 0, 1)}
+                          {fmtUl(result.recipes.find((r) => r.id === 'assay-buffer')?.prepare_ul ?? 0)}
                         </td>
                       </tr>
                     </tbody>
@@ -381,10 +380,10 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                   <NumField label="Dilution from stock" unit="1:N" value={tb.dilution} step={100} onChange={(v) => setExp({ tb: { ...tb, dilution: v } })} />
                   <NumField label="Extra to prepare" unit="µl" value={tb.extraVolume_ul} step={50} onChange={(v) => setExp({ tb: { ...tb, extraVolume_ul: v } })} />
                   <div className="pipette-box">
-                    <CalcField label="Tb solution" unit="µl" value={result.tb.required_ul} decimals={1} strong />
-                    <CalcField label="…of which Tb stock" unit="µl" value={result.tb.stock_ul} decimals={3} strong />
+                    <CalcField label="Tb solution" unit="µl" value={result.tb.required_ul} strong />
+                    <CalcField label="…of which Tb stock" unit="µl" value={result.tb.stock_ul} strong />
                   </div>
-                  <CalcField label="Diluent" unit="µl" value={result.tb.diluent_ul} decimals={1} />
+                  <CalcField label="Diluent" unit="µl" value={result.tb.diluent_ul} />
                   <p className="hint">
                     Tb goes on before everything else and is washed out once the cells are labelled,
                     so it never enters the well composition and is not DMSO-matched.
@@ -430,11 +429,11 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                 <NumField label="Substrate added" unit="µl per well" value={sub.volumePerWell_ul} onChange={(v) => setSub({ volumePerWell_ul: v })} />
                 <NumField label="Wells to measure" unit="wells" value={sub.wells} step={1} onChange={(v) => setSub({ wells: v })} />
                 <NumField label="Extra to prepare" unit="µl" value={sub.extraVolume_ul} step={50} onChange={(v) => setSub({ extraVolume_ul: v })} />
-                <CalcField label="→ prepare" unit="µl" value={result.substrate.required_ul} decimals={1} strong />
+                <CalcField label="→ prepare" unit="µl" value={result.substrate.required_ul} strong />
                 <p className="hint">
-                  The well then holds {fmtVol(result.substrate.assayBufferPerWell_ul, 1)} µl of plain{' '}
-                  {result.assay.diluent} + {fmtVol(sub.volumePerWell_ul, 1)} µl substrate +{' '}
-                  {fmtVol(exp.addition.compound_ul, 1)} µl compound. The substrate solution is made up
+                  The well then holds {fmtUl(result.substrate.assayBufferPerWell_ul)} µl of plain{' '}
+                  {result.assay.diluent} + {fmtUl(sub.volumePerWell_ul)} µl substrate +{' '}
+                  {fmtUl(exp.addition.compound_ul)} µl compound. The substrate solution is made up
                   in the same {result.assay.diluent} as the well, so it carries whatever that does.
                 </p>
               </div>
@@ -453,8 +452,8 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                 <CalcField label="= diluted in the well by" unit="×" value={result.substrate.foldFactor} decimals={3} strong />
                 <p className="hint">
                   {sub.reference === 'after-compounds'
-                    ? `${fmtVol(wellVolume, 1)} µl in the well ÷ ${fmtVol(sub.volumePerWell_ul, 1)} µl of substrate.`
-                    : `${fmtVol(wellVolume - exp.addition.compound_ul, 1)} µl before the compounds ÷ ${fmtVol(sub.volumePerWell_ul, 1)} µl of substrate.`}{' '}
+                    ? `${fmtUl(wellVolume)} µl in the well ÷ ${fmtUl(sub.volumePerWell_ul)} µl of substrate.`
+                    : `${fmtUl(wellVolume - exp.addition.compound_ul)} µl before the compounds ÷ ${fmtUl(sub.volumePerWell_ul)} µl of substrate.`}{' '}
                   Everything below is quoted as the final concentration in the well; the app works
                   back to what goes in the tube.
                 </p>
@@ -484,7 +483,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                         <input type="number" step="any" value={c.dilution} onChange={(e) => setComponent(c.id, { dilution: Number(e.target.value) })} />
                       </td>
                       <td className="calc num">{res ? round(res.preparedDilution, 2) : ''}</td>
-                      <td className="calc num">{res ? fmtVol(res.stock_ul, 3) : ''}</td>
+                      <td className="calc num">{res ? fmtUl(res.stock_ul) : ''}</td>
                       <td className="input">
                         <input style={{ textAlign: 'left' }} value={c.notes} onChange={(e) => setComponent(c.id, { notes: e.target.value })} />
                       </td>
@@ -591,12 +590,12 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                               (c) => c.required_ul > 0 && (c.matched ? 'dmso' : 'normal') === r.id,
                             );
                             return inThis.length > 0
-                              ? ` · includes ${inThis.map((c) => `${fmtVol(c.required_ul, 1)} µl ${c.name || 'buffer channel'}`).join(', ')}`
+                              ? ` · includes ${inThis.map((c) => `${fmtUl(c.required_ul)} µl ${c.name || 'buffer channel'}`).join(', ')}`
                               : '';
                           })()}
                         </em>
                       </td>
-                      <td className="num">{fmtVol(r.required_ul, 1)}</td>
+                      <td className="num">{fmtUl(r.required_ul)}</td>
                       <td className="input">
                         <input
                           type="number"
@@ -614,12 +613,12 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                           }
                         />
                       </td>
-                      <td className="calc num">{fmtVol(r.base_ul, 2)}</td>
-                      <td className="calc num">{r.dmso_ul > 0 ? fmtVol(r.dmso_ul, 3) : '—'}</td>
-                      <td className="calc num">{r.bsaStock_ul > 0 ? fmtVol(r.bsaStock_ul, 3) : '—'}</td>
+                      <td className="calc num">{fmtUl(r.base_ul)}</td>
+                      <td className="calc num">{r.dmso_ul > 0 ? fmtUl(r.dmso_ul) : '—'}</td>
+                      <td className="calc num">{r.bsaStock_ul > 0 ? fmtUl(r.bsaStock_ul) : '—'}</td>
                       <td className="calc num">
                         {r.components.length > 0
-                          ? r.components.map((c) => `${c.name}: ${fmtVol(c.volume_ul, 3)}`).join(' · ')
+                          ? r.components.map((c) => `${c.name}: ${fmtUl(c.volume_ul)}`).join(' · ')
                           : '—'}
                       </td>
                     </tr>
@@ -645,8 +644,8 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                     {draws.map((r) => (
                       <tr key={r.id}>
                         <td>{r.name}</td>
-                        <td className="num">{fmtVol(r.required_ul, 1)}</td>
-                        <td className="calc num">{fmtVol(r.base_ul, 1)}</td>
+                        <td className="num">{fmtUl(r.required_ul)}</td>
+                        <td className="calc num">{fmtUl(r.base_ul)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -660,7 +659,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
 
             {result.plainBuffer_ul > 0 && (
               <p className="hint">
-                Plus <strong>{fmtVol(result.plainBuffer_ul, 0)} µl of plain {result.assay.diluent}</strong>{' '}
+                Plus <strong>{fmtUl(result.plainBuffer_ul)} µl of plain {result.assay.diluent}</strong>{' '}
                 straight from the bottle — nothing to prepare, listed so you know what the run uses.
               </p>
             )}
@@ -770,7 +769,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
               <div>
                 <h3>This block</h3>
                 <div className="pipette-box">
-                  <CalcField label="Stock needed" unit="µl" value={res.stockNeeded_ul} decimals={3} strong />
+                  <CalcField label="Stock needed" unit="µl" value={res.stockNeeded_ul} strong />
                 </div>
                 <CalcField label={result.assay.normalBufferName} unit="µl" value={res.totalNormalBuffer_ul} />
                 <CalcField label={result.assay.dmsoBufferName} unit="µl" value={res.totalDmsoBuffer_ul} />
@@ -815,11 +814,11 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                       <td className="calc num">{row ? round(row.tubeConc_uM, 4) : ''}</td>
                       <td className="calc num">{row ? row.volToPrepare_ul : ''}</td>
                       <td className="calc num">
-                        {row ? `${fmtVol(row.aliquotIn_ul, 3)}${row.aliquotFrom === 'stock' ? ' (stock)' : ''}` : ''}
+                        {row ? `${fmtUl(row.aliquotIn_ul)}${row.aliquotFrom === 'stock' ? ' (stock)' : ''}` : ''}
                       </td>
-                      <td className="calc num">{row ? fmtVol(row.normalBuffer_ul, 2) : ''}</td>
-                      <td className="calc num">{row ? fmtVol(row.dmsoBuffer_ul, 2) : ''}</td>
-                      <td className="calc num">{row ? fmtVol(row.leftForWells_ul, 2) : ''}</td>
+                      <td className="calc num">{row ? fmtUl(row.normalBuffer_ul) : ''}</td>
+                      <td className="calc num">{row ? fmtUl(row.dmsoBuffer_ul) : ''}</td>
+                      <td className="calc num">{row ? fmtUl(row.leftForWells_ul) : ''}</td>
                     </tr>
                   );
                 })}
@@ -883,7 +882,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                   <td className="input">
                     <input type="number" step="any" value={c.extraVolume_ul} onChange={(e) => setChannel(c.id, { extraVolume_ul: Number(e.target.value) })} />
                   </td>
-                  <td className="calc num">{fmtVol(res?.required_ul ?? 0, 1)}</td>
+                  <td className="calc num">{fmtUl(res?.required_ul ?? 0)}</td>
                   <td className="no-print">
                     <ConfirmButton onConfirm={() => setExp({ bufferChannels: exp.bufferChannels.filter((x) => x.id !== c.id) })}>✕</ConfirmButton>
                   </td>

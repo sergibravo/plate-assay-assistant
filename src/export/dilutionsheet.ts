@@ -5,7 +5,7 @@
 
 import * as XLSX from 'xlsx-js-style';
 import type { DilutionResult } from '../calc/dilutions';
-import { round } from '../calc/units';
+import { round, roundUl } from '../calc/units';
 import { slug, triggerDownload, type Project } from '../state/project';
 
 type CellValue = string | number | null;
@@ -94,7 +94,7 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
     ...result.bufferChannels.map((c) =>
       param(
         `Buffer channel — ${c.name || 'unnamed'}`,
-        `${round(c.required_ul, 1)} µl`,
+        `${roundUl(c.required_ul)} µl`,
         c.matched ? 'made of the DMSO diluent' : 'made of the plain diluent',
       ),
     ),
@@ -125,16 +125,16 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
     ...result.recipes.filter((r) => !r.isPlainDraw && !r.isPlainBuffer && r.required_ul > 0).map((r): Row => [
       { v: `${r.name}${r.overridden ? ' (volume you set)' : ''} — from ${r.baseName}`, s: pipetteLabel() },
       { v: r.prepare_ul, s: pipette() },
-      { v: round(r.base_ul, 2), s: pipette() },
-      { v: r.dmso_ul > 0 ? round(r.dmso_ul, 3) : '—', s: pipette() },
-      { v: r.bsaStock_ul > 0 ? round(r.bsaStock_ul, 3) : '—', s: pipette() },
-      { v: r.components.length > 0 ? r.components.map((c) => `${c.name}: ${round(c.volume_ul, 3)}`).join(' · ') : '—', s: pipette() },
+      { v: roundUl(r.base_ul), s: pipette() },
+      { v: r.dmso_ul > 0 ? roundUl(r.dmso_ul) : '—', s: pipette() },
+      { v: r.bsaStock_ul > 0 ? roundUl(r.bsaStock_ul) : '—', s: pipette() },
+      { v: r.components.length > 0 ? r.components.map((c) => `${c.name}: ${roundUl(c.volume_ul)}`).join(' · ') : '—', s: pipette() },
     ]),
     [{ v: result.target > 0 ? `The DMSO diluent is ${result.assay.diluent} premixed at ${pct(result.target)} DMSO; the other carries none.` : 'No DMSO stocks: plain diluent throughout.', s: muted() }],
     [{ v: 'Make the batch first, then take from it for each of the others.', s: muted() }],
     ...(result.plainBuffer_ul > 0
       ? ([[
-          { v: `Plus ${round(result.plainBuffer_ul, 0)} µl of plain ${result.assay.diluent} from the bottle`, s: label() },
+          { v: `Plus ${roundUl(result.plainBuffer_ul)} µl of plain ${result.assay.diluent} from the bottle`, s: label() },
           { v: '', s: label() },
           { v: 'nothing to prepare', s: muted() },
         ]] as Row[])
@@ -146,7 +146,7 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
             .filter((r) => r.isPlainDraw && !r.isPlainBuffer && r.required_ul > 0)
             .map((r): Row => [
               { v: r.name, s: label() },
-              { v: round(r.required_ul, 1), s: value() },
+              { v: roundUl(r.required_ul), s: value() },
               { v: round(r.base_ul, 1), s: pipette() },
             ]),
           [{ v: 'Same buffer, just portioned out — already counted in the batch above.', s: muted() }],
@@ -174,9 +174,9 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
     if (result.tb.enabled) {
       const tb = exp.tb;
       rows.push(...[
-        param('Tb solution', `${round(result.tb.required_ul, 1)} µl`, `${tb.volumePerWell_ul} µl × ${tb.wells} wells + ${round(tb.extraVolume_ul, 1)} µl extra`),
-        [{ v: '  Tb stock', s: pipetteLabel() }, { v: round(result.tb.stock_ul, 3), s: pipette() }, { v: `µl  (1:${round(tb.dilution, 1)})`, s: unit() }],
-        [{ v: '  Diluent', s: pipetteLabel() }, { v: round(result.tb.diluent_ul, 1), s: pipette() }, { v: 'µl', s: unit() }],
+        param('Tb solution', `${roundUl(result.tb.required_ul)} µl`, `${tb.volumePerWell_ul} µl × ${tb.wells} wells + ${roundUl(tb.extraVolume_ul)} µl extra`),
+        [{ v: '  Tb stock', s: pipetteLabel() }, { v: roundUl(result.tb.stock_ul), s: pipette() }, { v: `µl  (1:${round(tb.dilution, 1)})`, s: unit() }],
+        [{ v: '  Diluent', s: pipetteLabel() }, { v: roundUl(result.tb.diluent_ul), s: pipette() }, { v: 'µl', s: unit() }],
         [{ v: tb.notes || 'Added before everything else and washed out once the cells are labelled.', s: muted() }],
       ]);
     }
@@ -192,19 +192,19 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
       for (const st of [result.fluorescein.intermediate, result.fluorescein.intoBuffer]) {
         rows.push([
           { v: `${round(st.from_uM, 1)} µM → ${round(st.product_uM, 1)} µM  (1:${round(st.fold, 1)})`, s: label() },
-          { v: round(st.prepare_ul, 1), s: pipette() },
-          { v: round(st.stock_ul, 3), s: pipette() },
-          { v: round(st.diluent_ul, 1), s: pipette() },
+          { v: roundUl(st.prepare_ul), s: pipette() },
+          { v: roundUl(st.stock_ul), s: pipette() },
+          { v: roundUl(st.diluent_ul), s: pipette() },
         ]);
       }
       rows.push([{ v: `The batch below is that ${round(f.target_uM, 1)} µM fluorescein buffer; every compound diluent is drawn from it.`, s: muted() }]);
       rows.push(
-        param(`  on the cells — ${round(result.wellsBuffered, 1)} wells × ${round(exp.addition.assayBuffer_ul, 1)} µl`, round(result.bufferUse.wells_ul, 1), 'µl'),
+        param(`  on the cells — ${round(result.wellsBuffered, 1)} wells × ${roundUl(exp.addition.assayBuffer_ul)} µl`, roundUl(result.bufferUse.wells_ul), 'µl'),
         param(
           result.bufferUse.channels_ul > 0
-            ? `  for the compounds (buffer channels included: ${round(result.bufferUse.channels_ul, 1)} µl)`
+            ? `  for the compounds (buffer channels included: ${roundUl(result.bufferUse.channels_ul)} µl)`
             : '  for the compounds',
-          round(result.bufferUse.compounds_ul, 1),
+          roundUl(result.bufferUse.compounds_ul),
           'µl',
         ),
       );
@@ -215,8 +215,8 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
     const sub = exp.substrate;
     rows.push([], section('SUBSTRATE'));
     rows.push(...[
-      param('Added per well', `${sub.volumePerWell_ul} µl`, `into ${round(result.substrate.assayBufferPerWell_ul, 1)} µl of ${result.assay.diluent}`),
-      param('Wells + extra', `${sub.wells} wells + ${round(sub.extraVolume_ul, 1)} µl`, `= ${round(result.substrate.required_ul, 1)} µl to prepare`),
+      param('Added per well', `${sub.volumePerWell_ul} µl`, `into ${roundUl(result.substrate.assayBufferPerWell_ul)} µl of ${result.assay.diluent}`),
+      param('Wells + extra', `${sub.wells} wells + ${roundUl(sub.extraVolume_ul)} µl`, `= ${roundUl(result.substrate.required_ul)} µl to prepare`),
       param(
         'Diluted in the well by',
         `${round(result.substrate.foldFactor, 3)}×`,
@@ -235,7 +235,7 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
         { v: c.name, s: label() },
         { v: round(c.preparedDilution, 2), s: value() },
         { v: round(c.inWellDilution, 2), s: value() },
-        { v: round(c.stock_ul, 3), s: pipette() },
+        { v: roundUl(c.stock_ul), s: pipette() },
         { v: c.notes, s: muted() },
       ]);
     }
@@ -269,7 +269,7 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
       });
 
       rows.push([{ v: `${b.name || 'compound'} — ${source.stockConc_uM} µM stock in ${source.vehicle}${source.excludeFromVehicleMatch ? ', not DMSO-matched' : ''}`, s: { font: { bold: true, sz: 12, color: { rgb: colour.head } } } }]);
-      rows.push([{ v: `${source.volForWells_ul} µl per step + ${round(source.extraVolume_ul, 1)} µl extra · ${round(source.dilutionFactorOverride ?? result.additionFactor, 3)}× dilution on addition · take ${round(b.stockNeeded_ul, 3)} µl of stock`, s: muted() }]);
+      rows.push([{ v: `${source.volForWells_ul} µl per step + ${roundUl(source.extraVolume_ul)} µl extra · ${round(source.dilutionFactorOverride ?? result.additionFactor, 3)}× dilution on addition · take ${roundUl(b.stockNeeded_ul)} µl of stock`, s: muted() }]);
       rows.push([
         head('Conc. (logM)'),
         head('In tube (µM)'),
@@ -284,19 +284,19 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
           body(r.logM),
           body(round(r.tubeConc_uM, 4)),
           body(r.volToPrepare_ul),
-          body(`${round(r.aliquotIn_ul, 3)}${r.aliquotFrom === 'stock' ? ' (stock)' : ''}`),
-          body(round(r.normalBuffer_ul, 2)),
-          body(round(r.dmsoBuffer_ul, 2)),
-          body(round(r.leftForWells_ul, 2)),
+          body(`${roundUl(r.aliquotIn_ul)}${r.aliquotFrom === 'stock' ? ' (stock)' : ''}`),
+          body(roundUl(r.normalBuffer_ul)),
+          body(roundUl(r.dmsoBuffer_ul)),
+          body(roundUl(r.leftForWells_ul)),
         ]);
       }
       rows.push([
         { v: 'TOTAL', s: { font: { bold: true } } },
         { v: '', s: label() },
         { v: '', s: label() },
-        { v: round(b.stockNeeded_ul, 3), s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
-        { v: round(b.totalNormalBuffer_ul, 2), s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
-        { v: round(b.totalDmsoBuffer_ul, 2), s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
+        { v: roundUl(b.stockNeeded_ul), s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
+        { v: roundUl(b.totalNormalBuffer_ul), s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
+        { v: roundUl(b.totalDmsoBuffer_ul), s: { font: { bold: true }, alignment: { horizontal: 'right' } } },
         { v: '', s: label() },
       ]);
       if (source.notes.trim()) rows.push([{ v: source.notes, s: muted() }]);

@@ -256,6 +256,14 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
 - **The DNA inventory can be reordered by dragging** (or ↑ ↓), and the condition blocks
   follow, because every condition's rows are rebuilt from the inventory order.
 
+## Volumes read like pipettes (2026-09-30)
+
+- **Two decimals at 10 µl and below, one above.** The precision shown is the precision a
+  pipette can deliver; anything finer is noise on a bench sheet. One pair of helpers
+  (`roundUl`, `fmtUl`) does it, a `µl` field applies it by default, and both exports use it,
+  so the rule cannot drift apart between screen and paper. Calculations are untouched — they
+  stay at full precision and round only at the last moment.
+
 ## Open / deferred
 
 - Deeper UI polish (keyboard navigation, sidebar, density) waits until modules 2 and 3 exist,

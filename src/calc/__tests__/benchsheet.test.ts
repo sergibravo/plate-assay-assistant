@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as XLSX from 'xlsx-js-style';
 import { computeGrid, masterMix, perCondition } from '../transfection';
+import { roundUl } from '../units';
 import { transfectionBenchSheetRows } from '../../export/benchsheet';
 import { enableCondition, newProject } from '../../state/project';
 
@@ -33,8 +34,9 @@ describe('bench sheet export', () => {
   it('carries the numbers a scientist pipettes', () => {
     const cells = flat(setup);
     expect(cells).toContain('Total PEI');
-    expect(cells).toContain(Number(mix.totalPei_ul.toFixed(2)));
-    expect(cells).toContain(Number(mix.totalOptimemForPei_ul.toFixed(2)));
+    // shown to what a pipette can deliver, not to every digit
+    expect(cells).toContain(roundUl(mix.totalPei_ul));
+    expect(cells).toContain(roundUl(mix.totalOptimemForPei_ul));
     expect(cells).toContain('k cells');
   });
 

@@ -15,7 +15,7 @@ import {
   type PlateLayout,
   type WellState,
 } from '../calc/layout';
-import { inkOn, tint } from '../calc/palette';
+import { diagonalSplit, inkOn, tint } from '../calc/palette';
 import { PLATE_GEOMETRY } from '../calc/types';
 import { exportLayoutXlsx } from '../export/layoutsheet';
 import type { Project } from '../state/project';
@@ -36,7 +36,17 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
   const wells = useMemo(() => resolveWells(layout), [layout]);
   const summary = useMemo(() => summarise(layout), [layout]);
 
-  const [brush, setBrush] = useState<Brush>({ mode: 'erase' });
+  const [brush, setBrushState] = useState<Brush>({ mode: 'erase' });
+  /*
+   * The brush is held in a ref as well as state. Choosing a paint and clicking a well in the
+   * same frame would otherwise paint with the *previous* brush — the handler on that well was
+   * built before the click that changed it.
+   */
+  const brushRef = useRef<Brush>(brush);
+  const setBrush = (next: Brush) => {
+    brushRef.current = next;
+    setBrushState(next);
+  };
 
   /*
    * Dragging reads and writes through refs rather than state. A drag fires faster than React
@@ -68,15 +78,16 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
 
   const applyTo = (ids: string[]) => {
     const current$ = layoutRef.current;
+    const active = brushRef.current;
     const next = { ...current$.wells };
     for (const id of ids) {
       const current: WellState = next[id] ?? {};
-      if (brush.mode === 'erase') {
+      if (active.mode === 'erase') {
         delete next[id];
-      } else if (brush.mode === 'treatment') {
-        next[id] = { ...current, treatments: addTreatment(current.treatments ?? [], brush.paint) };
+      } else if (active.mode === 'treatment') {
+        next[id] = { ...current, treatments: addTreatment(current.treatments ?? [], active.paint) };
       } else {
-        next[id] = { ...current, transfectionId: brush.paint.id };
+        next[id] = { ...current, transfectionId: active.paint.id };
       }
     }
     const updated = { ...current$, wells: next };
@@ -228,15 +239,15 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
                   <th onClick={() => applyTo(rowIds(row))} title={`Fill row ${rowLabel}`}>{rowLabel}</th>
                   {Array.from({ length: geometry.cols }, (_, col) => {
                     const w = wells.find((x) => x.row === row && x.col === col)!;
-                    const top = w.treatments.at(-1);
-                    const topPaint = top ? paintById.get(top) : undefined;
+                    const paints = w.treatments.map((t) => paintById.get(t)).filter((p): p is Paint => Boolean(p));
                     const seed = w.transfectionId ? paintById.get(w.transfectionId) : undefined;
+                    const fills = paints.map((p) => tint(p.colour, 0.36));
                     return (
                       <td
                         key={col}
                         className={`well${isUsed(w) ? ' used' : ''}${isEdgeWell(w, layout.format) ? ' edge' : ''}`}
                         style={{
-                          background: topPaint ? tint(topPaint.colour, 0.3) : undefined,
+                          background: fills.length > 0 ? diagonalSplit(fills) : undefined,
                           borderLeft: seed ? `4px solid ${seed.colour}` : undefined,
                         }}
                         title={[w.id, name(w.transfectionId), ...w.treatments.map(name), w.timePoint].filter(Boolean).join(' · ')}
@@ -244,8 +255,15 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
                         onMouseOver={() => { if (dragging.current) applyTo([w.id]); }}
                         onContextMenu={(e) => { e.preventDefault(); liftTopTreatment(w.id); }}
                       >
-                        <span className="well-label">{topPaint?.short ?? ''}</span>
-                        {w.treatments.length > 1 && <span className="well-more">+{w.treatments.length - 1}</span>}
+                        {paints.map((p, i) => (
+                          <span
+                            key={p.id}
+                            className={`well-label part-${i === 0 ? 'first' : 'rest'}`}
+                            style={{ color: inkOn(fills[i]) }}
+                          >
+                            {p.short}
+                          </span>
+                        ))}
                       </td>
                     );
                   })}

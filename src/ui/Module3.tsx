@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import {
   ASSAY_PROFILES,
   computeDilutions,
+  stepVolume,
   substrateInWell,
   type AssayType,
   type CompoundBlock,
@@ -728,10 +729,9 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                   if (painted === 0) return null;
                   return (
                     <p className="hint">
-                      The plate covers {painted} of {used} step{used === 1 ? '' : 's'} here, so{' '}
-                      {painted === used ? 'each is' : 'those are'} sized from the wells painted with
-                      {painted === 1 ? ' it' : ' them'} ({fmtUl(exp.addition.compound_ul)} µl a well).
-                      {painted < used ? ' The figure above covers the rest.' : ''}
+                      <strong>The plate sizes {painted} of {used} step{used === 1 ? '' : 's'} here.</strong>{' '}
+                      Wells painted × {fmtUl(exp.addition.compound_ul)} µl a well = the “for wells”
+                      column below; the figure above covers any step the plate does not mention.
                     </p>
                   );
                 })()}
@@ -804,6 +804,8 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                   <th className="num" style={{ width: 90 }}>Conc. (logM)</th>
                   <th className="num">In well</th>
                   <th className="num">In tube (µM)</th>
+                  <th className="num">Wells</th>
+                  <th className="num">For wells (µl)</th>
                   <th className="num">Vol to prepare (µl)</th>
                   <th className="num">From prev. or stock (µl)</th>
                   <th className="num">{result.assay.normalBufferName} (µl)</th>
@@ -827,6 +829,12 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                       </td>
                       <td className="num">{concLabel(logM)}</td>
                       <td className="calc num">{row ? round(row.tubeConc_uM, 4) : ''}</td>
+                      <td className="num" title={plateWells[`cmp:${block.id}:${i}`] ? 'painted on the plate' : 'no wells painted — the typed volume is used'}>
+                        {row ? (plateWells[`cmp:${block.id}:${i}`] ?? '—') : ''}
+                      </td>
+                      <td className="calc num">
+                        {row ? fmtUl(stepVolume(dilutionsWithPlate(project), block, i)) : ''}
+                      </td>
                       <td className="calc num">{row ? row.volToPrepare_ul : ''}</td>
                       <td className="calc num">
                         {row ? `${fmtUl(row.aliquotIn_ul)}${row.aliquotFrom === 'stock' ? ' (stock)' : ''}` : ''}

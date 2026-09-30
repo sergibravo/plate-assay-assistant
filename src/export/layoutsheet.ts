@@ -43,11 +43,13 @@ export function plateRows(project: Project, transfections: Paint[], treatments: 
     const row: Row = [head(g.rowLabels[r])];
     for (let c = 0; c < g.cols; c++) {
       const w = wells.find((x) => x.row === r && x.col === c)!;
-      const top = w.treatments.at(-1);
-      const p = top ? paint.get(top) : undefined;
+      const paints = w.treatments.map((t) => paint.get(t)).filter((x): x is Paint => Boolean(x));
+      const p = paints[0];
+      // Excel cannot split a cell diagonally, so a shared well is filled from the first
+      // treatment and names them both — the widths below leave room for it.
       const background = p ? tint(p.colour, 0.3) : undefined;
       row.push({
-        v: p ? (w.treatments.length > 1 ? `${p.short} +${w.treatments.length - 1}` : p.short) : '',
+        v: paints.map((x) => x.short).join(' + '),
         s: {
           font: { sz: 9, color: { rgb: toXlsx(background ? inkOn(background) : '#98a2b3') } },
           fill: background ? { fgColor: { rgb: toXlsx(background) } } : undefined,
@@ -112,7 +114,7 @@ export function exportLayoutXlsx(project: Project, longTable: LongRow[], transfe
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(
     wb,
-    sheet(plateRows(project, transfections, treatments), [6, ...Array.from({ length: g.cols }, () => 10), 28, 10]),
+    sheet(plateRows(project, transfections, treatments), [6, ...Array.from({ length: g.cols }, () => 14), 28, 10]),
     'Plate',
   );
 

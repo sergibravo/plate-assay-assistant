@@ -67,3 +67,17 @@ export function inkOn(background: string): string {
 export function toXlsx(hex: string): string {
   return hex.replace('#', '').toUpperCase();
 }
+
+/**
+ * A well holding two treatments is split diagonally rather than showing one colour and a
+ * count: both are visible at once, and which is which is read off the legend.
+ */
+export function diagonalSplit(colours: string[]): string {
+  if (colours.length === 0) return 'transparent';
+  if (colours.length === 1) return colours[0];
+  const step = 100 / colours.length;
+  const stops = colours
+    .map((c, i) => `${c} ${i * step}% ${(i + 1) * step}%`)
+    .join(', ');
+  return `linear-gradient(135deg, ${stops})`;
+}

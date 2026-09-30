@@ -221,18 +221,23 @@ tr.drop-target td { border-top: 2px solid var(--accent); }
 .chip.on { outline: 2px solid var(--ink); outline-offset: 1px; font-weight: 700; }
 .chip.eraser { background: #fff; color: var(--ink); }
 
-table.plate { table-layout: fixed; width: auto; }
+/* `max-content` so the declared cell widths are honoured; the panel scrolls if it must. */
+table.plate { table-layout: fixed; width: max-content; }
+table.plate thead th { width: 66px; }
+table.plate thead th:first-child, table.plate tbody th { width: 28px; }
 table.plate th { cursor: pointer; text-align: center; background: #f2f4f7; font-size: 11px; }
 table.plate th:hover { background: #e4e7ec; }
 table.plate th.plain { cursor: default; }
 table.plate td.well {
-  height: 34px; width: 52px; text-align: center; vertical-align: middle; cursor: crosshair;
-  user-select: none; background: #fcfcfd; padding: 1px; position: relative;
+  height: 40px; width: 66px; text-align: center; vertical-align: middle; cursor: crosshair;
+  user-select: none; background: #fcfcfd; padding: 1px; position: relative; overflow: hidden;
 }
 table.plate td.well:hover { outline: 2px solid var(--accent); outline-offset: -2px; }
 table.plate td.well.edge { box-shadow: inset 0 0 0 1px #f2f4f7; }
-table.plate .well-label { font-size: 9px; line-height: 1.1; display: block; overflow: hidden; }
-table.plate .well-more { position: absolute; top: 1px; right: 3px; font-size: 8px; color: var(--muted); }
+/* Two treatments split the well diagonally; each label sits in its own half. */
+table.plate .well-label { font-size: 9px; line-height: 1.15; display: block; white-space: nowrap; }
+table.plate .well-label.part-first { text-align: left; padding-left: 3px; }
+table.plate .well-label.part-rest { text-align: right; padding-right: 3px; }
 table.plate td.row-side { white-space: nowrap; }
 table.plate td.row-side select { max-width: 160px; }
 .print-only { display: none; }

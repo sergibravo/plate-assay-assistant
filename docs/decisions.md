@@ -270,10 +270,15 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
   on the wells rather than as column defaults, which removes the earlier "is a seeded row
   crossing a treated column in play?" ambiguity entirely. Transfections keep a row default
   because Sergi sometimes seeds a whole row and sometimes a single well.
-- **A well can hold several treatments**, since an inhibitor and a ligand share a well in some
-  experiments. Painting a second dose of the same compound replaces the first; painting a
-  different compound joins it. The grid shows the last paint with a `+n` marker, and the
-  export spells the combinations out.
+- **A well holding two treatments is split diagonally**, each half in its own colour with its
+  own label. Showing one colour and a `+1` count was tried first and read as a mystery; the
+  split says what is in the well without being read anywhere else. Wells and the exported
+  cells are wider to fit two labels. Excel cannot split a cell, so a shared well there is
+  filled from the first treatment and names both.
+- **The brush is held in a ref as well as state.** Choosing a paint and clicking a well in the
+  same frame painted with the *previous* brush, because the well's handler was built before
+  the click that changed it. In a lab tool the first click after choosing something must do
+  what it says.
 - **Erasing drags like painting.** An eraser is just another paint. Right-click lifts only the
   last treatment off a well, leaving the rest — asked for after right-click-to-clear proved
   too blunt for layered wells.

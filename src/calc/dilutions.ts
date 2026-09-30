@@ -200,6 +200,7 @@ export interface DiluentRecipe {
 export interface BufferChannel {
   id: string;
   name: string;
+  colour: string;
   /** What the plate takes. */
   volume_ul: number;
   /** Extra µl on top. */
@@ -211,6 +212,8 @@ export interface BufferChannel {
 export interface CompoundBlock {
   id: string;
   name: string;
+  /** Hex, shown wherever this compound appears. Its dilution steps shade from it. */
+  colour: string;
   /** `V` — volume needed at each step for the plate (µl). L `E11`. */
   volForWells_ul: number;
   /**
@@ -236,6 +239,13 @@ export interface CompoundBlock {
 
 export interface DilutionExperiment {
   assayType: AssayType;
+  /**
+   * Wells painted with each dilution step, from module 2. When the plate says how many wells
+   * a step covers, that is what the step is sized for — nobody should type a volume the
+   * plate already knows. `null` (or a step the plate does not mention) falls back to the
+   * block's own "vol for wells". The substrate keeps its own count either way.
+   */
+  wellsPerTreatment?: Record<string, number> | null;
   /** Working DMSO fraction override (0.002 = 0.2 %); `null` = use the computed maximum. */
   dmsoOverride: number | null;
   /** How the compound gets into the well — the one factor behind every calculation. */
@@ -368,6 +378,20 @@ export interface DilutionResult {
   warnings: Warning[];
 }
 
+/**
+ * What one dilution step has to supply: the wells the plate paints with it, or the block's
+ * own figure when the plate is silent about it.
+ */
+export function stepVolume(
+  exp: DilutionExperiment,
+  block: CompoundBlock,
+  stepIndex: number,
+): number {
+  const painted = exp.wellsPerTreatment?.[`cmp:${block.id}:${stepIndex}`];
+  if (painted !== undefined && painted > 0) return painted * exp.addition.compound_ul;
+  return block.volForWells_ul;
+}
+
 /** The rows a block actually uses: leading non-empty entries, in order. */
 function usedRows(block: CompoundBlock): number[] {
   return block.logM.filter((v): v is number => v !== null && v !== undefined && Number.isFinite(v));
@@ -383,14 +407,15 @@ export function blockFactor(exp: DilutionExperiment, block: CompoundBlock): numb
   return block.dilutionFactorOverride ?? additionFactor(exp);
 }
 
-function geometry(block: CompoundBlock, factor: number) {
+function geometry(block: CompoundBlock, factor: number, stepVolumes: number[]) {
   const logMs = usedRows(block);
   const n = logMs.length;
   const conc = logMs.map(logMToUM);
-  const base = block.volForWells_ul + Math.max(0, block.extraVolume_ul);
+  const extra = Math.max(0, block.extraVolume_ul);
 
   const volToPrepare: number[] = new Array(n);
   for (let i = n - 1; i >= 0; i--) {
+    const base = (stepVolumes[i] ?? block.volForWells_ul) + extra;
     volToPrepare[i] =
       i === n - 1
         ? ceilingTo1(base)
@@ -411,16 +436,24 @@ function geometry(block: CompoundBlock, factor: number) {
 }
 
 /** `E_top / D_top` — the DMSO fraction a DMSO-dissolved stock forces on its top tube. */
-export function dmsoLoadOf(block: CompoundBlock, factor: number): number {
+export function dmsoLoadOf(block: CompoundBlock, factor: number, stepVolumes: number[] = []): number {
   if (block.vehicle !== 'DMSO' || block.excludeFromVehicleMatch) return 0;
-  const g = geometry(block, factor);
+  const g = geometry(block, factor, stepVolumes);
   if (g.logMs.length === 0) return 0;
   return g.aliquotIn[0] / g.volToPrepare[0];
 }
 
 /** L `E4` — match the whole experiment to the worst case. */
 export function computeDmsoTarget(exp: DilutionExperiment): number {
-  return exp.blocks.reduce((max, b) => Math.max(max, dmsoLoadOf(b, blockFactor(exp, b))), 0);
+  return exp.blocks.reduce(
+    (max, b) => Math.max(max, dmsoLoadOf(b, blockFactor(exp, b), stepVolumesOf(exp, b))),
+    0,
+  );
+}
+
+/** Per-step volumes for a block, in row order. */
+export function stepVolumesOf(exp: DilutionExperiment, block: CompoundBlock): number[] {
+  return block.logM.map((_, i) => stepVolume(exp, block, i));
 }
 
 /** The BSA fraction the diluents must be premixed at, given the chosen basis. */
@@ -435,10 +468,16 @@ function inWellFraction(bufferFraction: number, placement: Placement, factor: nu
   return placement === 'all-buffers' ? bufferFraction : bufferFraction / factor;
 }
 
-function computeBlock(block: CompoundBlock, factor: number, target: number, bsaFrac: number): BlockResult {
+function computeBlock(
+  block: CompoundBlock,
+  factor: number,
+  target: number,
+  bsaFrac: number,
+  stepVolumes: number[],
+): BlockResult {
   const warnings: Warning[] = [];
   const scope = block.name || 'compound';
-  const { logMs, conc, volToPrepare, aliquotIn, leftForWells } = geometry(block, factor);
+  const { logMs, conc, volToPrepare, aliquotIn, leftForWells } = geometry(block, factor, stepVolumes);
   const n = logMs.length;
 
   // An excluded compound (the sheet's Terbium) is made up with DMSO-free diluent only.
@@ -513,7 +552,7 @@ function computeBlock(block: CompoundBlock, factor: number, target: number, bsaF
           `Row ${i + 1}: ${r.aliquotIn_ul.toFixed(3)} µl is below the ${MIN_PIPETTE_UL} µl minimum — pre-dilute the stock, or raise the volume for wells.`,
         );
       }
-      if (r.leftForWells_ul + 1e-9 < block.volForWells_ul) {
+      if (r.leftForWells_ul + 1e-9 < (stepVolumes[i] ?? block.volForWells_ul)) {
         warn('warn', 'not-enough-for-wells', `Row ${i + 1}: only ${r.leftForWells_ul.toFixed(1)} µl is left for the wells.`);
       }
     });
@@ -547,7 +586,7 @@ function computeBlock(block: CompoundBlock, factor: number, target: number, bsaF
     totalDmsoBuffer_ul: rows.reduce((a, r) => a + r.dmsoBuffer_ul, 0),
     stockNeeded_ul: n > 0 ? aliquotIn[0] : 0,
     isEmpty: n === 0,
-    dmsoLoad: dmsoLoadOf(block, factor),
+    dmsoLoad: dmsoLoadOf(block, factor, stepVolumes),
     unmatched: block.excludeFromVehicleMatch || blockTarget === 0,
     warnings,
   };
@@ -719,8 +758,8 @@ function wellBufferVolume(exp: DilutionExperiment): number {
   if (compound_ul <= 0) return extra;
   const perStep = assayBuffer_ul / compound_ul;
   const forCompoundWells = exp.blocks.reduce((total, b) => {
-    const rows = b.logM.filter((v) => v !== null && Number.isFinite(v)).length;
-    return total + rows * (b.volForWells_ul + Math.max(0, b.extraVolume_ul)) * perStep;
+    const used = b.logM.map((v, i) => ({ v, i })).filter((x) => x.v !== null && Number.isFinite(x.v));
+    return total + used.reduce((a, x) => a + (stepVolume(exp, b, x.i) + Math.max(0, b.extraVolume_ul)) * perStep, 0);
   }, 0);
   return forCompoundWells + extra;
 }
@@ -733,8 +772,8 @@ export function wellsCovered(exp: DilutionExperiment): number {
   const { compound_ul } = exp.addition;
   if (compound_ul <= 0) return 0;
   return exp.blocks.reduce((total, b) => {
-    const rows = b.logM.filter((v) => v !== null && Number.isFinite(v)).length;
-    return total + (rows * b.volForWells_ul) / compound_ul;
+    const used = b.logM.map((v, i) => ({ v, i })).filter((x) => x.v !== null && Number.isFinite(x.v));
+    return total + used.reduce((a, x) => a + stepVolume(exp, b, x.i) / compound_ul, 0);
   }, 0);
 }
 
@@ -744,12 +783,12 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
   const computedTarget = computeDmsoTarget(exp);
   const target = exp.dmsoOverride ?? computedTarget;
   const bsaFrac = bsaBufferFraction(exp);
-  const blocks = exp.blocks.map((b) => computeBlock(b, blockFactor(exp, b), target, bsaFrac));
+  const blocks = exp.blocks.map((b) => computeBlock(b, blockFactor(exp, b), target, bsaFrac, stepVolumesOf(exp, b)));
   const warnings: Warning[] = [];
 
   if (exp.dmsoOverride !== null && exp.dmsoOverride < computedTarget - 1e-12) {
     const worst = exp.blocks
-      .map((b) => ({ name: b.name, load: dmsoLoadOf(b, blockFactor(exp, b)) }))
+      .map((b) => ({ name: b.name, load: dmsoLoadOf(b, blockFactor(exp, b), stepVolumesOf(exp, b)) }))
       .sort((a, b) => b.load - a.load)[0];
     warnings.push({
       level: 'warn',
@@ -788,7 +827,7 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
   const inWellDmso = inWellFraction(target, exp.dmsoPlacement, factor);
   if (inWellDmso > DMSO_IN_WELL_CONCERN) {
     const worst = exp.blocks
-      .map((b) => ({ b, load: dmsoLoadOf(b, blockFactor(exp, b)) }))
+      .map((b) => ({ b, load: dmsoLoadOf(b, blockFactor(exp, b), stepVolumesOf(exp, b)) }))
       .sort((x, y) => y.load - x.load)[0];
     warnings.push({
       level: 'warn',

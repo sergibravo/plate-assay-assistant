@@ -64,7 +64,9 @@ npm test
    DNA stocks carry a lab ID; the condition grid grows, shrinks and may be ragged; OptiMEM
    per DNA tube is either a fixed volume added or a target final volume; the Excel bench
    sheet is colour-coded per condition.
-2. **Plate seeding & treatment layout** — not built yet.
+2. **Plate layout** — ✅ built. Paint transfections and treatments onto a 96/384-well plate,
+   drag to fill or erase, colours shared with module 3 and shading across a dilution series.
+   The wells painted with a step tell module 3 how much of it to prepare.
 3. **Serial dilutions + DMSO vehicle matching** — ✅ built, compounds only
    (`layout-aquous › Compounds`). Back-propagated prepared volumes, automatic DMSO matching
    across aqueous and DMSO stocks, per-compound and whole-experiment premix totals, and an

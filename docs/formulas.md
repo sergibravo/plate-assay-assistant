@@ -81,9 +81,32 @@ rounded ever feeds a calculation.
   still reads ✓ OK.
 - Unknown stock concentration yields `null` → “—”, never a number.
 
-## Module 2 — plate layout
+## Module 2 — the plate (`src/calc/layout.ts`)
 
-Not built yet. Reference: T `Plate Layout`.
+Reference: T `Plate Layout`, which lays a transfection along each row and a treatment down
+each column.
+
+A well holds **what is in it**: cells (a transfection) and any number of treatments, since an
+inhibitor and a ligand can share a well. Treatments are stored per well — the plate is
+painted, and a painted plate is easier to reason about than defaults with exceptions.
+Transfections keep a row default, because a whole row of one transfection is the common case,
+with per-well painting when it is not.
+
+| Quantity | Formula |
+| --- | --- |
+| A well's cells | its own `transfectionId`, else the row's |
+| Painting a step | replaces another step of the same compound, joins anything else |
+| Wells per treatment | how many wells carry that id |
+| Replicate group | same cells, same treatments, same time point |
+
+**The plate sizes the dilution steps.** `wellsPerTreatment` feeds module 3, where a step's
+volume becomes `wells painted × µl added per well`, plus that block's extra. A step nobody
+paints keeps the block's typed "vol for wells", and the substrate keeps its own count — it is
+not painted. See `stepVolume` in `dilutions.ts`.
+
+**Colours** come from one palette (`src/calc/palette.ts`) so a compound is the same colour on
+the plate, in module 3 and in both exports. A dilution series shades from its compound's
+colour, palest at the most dilute, so a dose-response reads as a gradient.
 
 ## Module 3 — serial dilution + DMSO matching (`src/calc/dilutions.ts`)
 

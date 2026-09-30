@@ -6,6 +6,8 @@
 
 import type { BufferChannel, CompoundBlock, DilutionExperiment } from '../calc/dilutions';
 import { defaultFluorescein, defaultTb } from '../calc/deret';
+import { emptyLayout, reshapeLayout, wellsPerTreatment, type PlateLayout } from '../calc/layout';
+import { NEUTRAL, paletteColour } from '../calc/palette';
 import { defaultSubstrate } from '../calc/substrate';
 import type {
   Compound,
@@ -29,6 +31,8 @@ export interface Project {
   compounds: Compound[];
   /** Module 3 — serial dilutions and DMSO matching. */
   dilutions: DilutionExperiment;
+  /** Module 2 — what goes in which well. */
+  layout: PlateLayout;
   notes: string;
 }
 
@@ -153,13 +157,14 @@ export function enableCondition(c: TransfectionCondition, stocks: DnaStock[]): T
 
 /** A fresh compound block with room for a dose-response series. */
 export function newBufferChannel(name = 'Vehicle alone'): BufferChannel {
-  return { id: uid('buf'), name, volume_ul: 0, extraVolume_ul: 0, vehicle: 'DMSO' };
+  return { id: uid('buf'), name, volume_ul: 0, extraVolume_ul: 0, vehicle: 'DMSO', colour: NEUTRAL };
 }
 
-export function newCompoundBlock(name = '', rows = 8): CompoundBlock {
+export function newCompoundBlock(name = '', rows = 8, index = 0): CompoundBlock {
   return {
     id: uid('cmp'),
     name,
+    colour: paletteColour(index),
     volForWells_ul: 200,
     dilutionFactorOverride: null,
     stockConc_uM: 10000,
@@ -230,6 +235,7 @@ export function newProject(name = 'Untitled experiment'): Project {
     grid,
     compounds: [],
     dilutions: emptyDilutions(),
+    layout: emptyLayout(transfection.plateFormat),
     notes: '',
   };
 }
@@ -307,7 +313,13 @@ export function migrate(raw: any): Project {
   p.dilutions = { ...emptyDilutions(), ...storedDilutions };
   p.dilutions.bsa = { ...emptyDilutions().bsa, ...(p.dilutions.bsa ?? {}) };
   p.dilutions.premixOverrides = { ...emptyDilutions().premixOverrides, ...(p.dilutions.premixOverrides ?? {}) };
+  p.dilutions.bufferChannels = (p.dilutions.bufferChannels ?? []).map((c: any) => ({ colour: NEUTRAL, ...c }));
   p.dilutions.substrate = p.dilutions.substrate ?? defaultSubstrate(p.dilutions.assayType ?? 'NanoBiT/BRET');
+  // Module 2 arrived after these files existed; an older one simply has an empty plate.
+  p.layout = p.layout ?? emptyLayout(p.transfection?.plateFormat ?? '96-well');
+  if (p.transfection?.plateFormat && p.layout.format !== p.transfection.plateFormat) {
+    p.layout = reshapeLayout(p.layout, p.transfection.plateFormat);
+  }
   p.dilutions.wells = p.dilutions.wells ?? null;
   p.dilutions.wellBufferExtra_ul = p.dilutions.wellBufferExtra_ul ?? 0;
   // The single "vehicle alone" volume became a list of buffer channels. Read the stored
@@ -315,7 +327,7 @@ export function migrate(raw: any): Project {
   if (storedDilutions.bufferChannels === undefined) {
     const vehicle = Number(storedDilutions.vehicleChannel_ul) || 0;
     p.dilutions.bufferChannels = vehicle > 0
-      ? [{ id: uid('buf'), name: 'Vehicle alone', volume_ul: vehicle, extraVolume_ul: 0, vehicle: 'DMSO' }]
+      ? [{ id: uid('buf'), name: 'Vehicle alone', volume_ul: vehicle, extraVolume_ul: 0, vehicle: 'DMSO', colour: NEUTRAL }]
       : [];
   }
   delete p.dilutions.vehicleChannel_ul;
@@ -351,8 +363,9 @@ export function migrate(raw: any): Project {
     p.dilutions.bsa.placement = 'compound-only';
     delete p.dilutions.bsa.basis;
   }
-  p.dilutions.blocks = (p.dilutions.blocks ?? []).map((b: any) => {
-    const block = { ...newCompoundBlock(), ...b };
+  p.dilutions.blocks = (p.dilutions.blocks ?? []).map((b: any, i: number) => {
+    // Colours arrived later; a block without one takes its place in the palette.
+    const block = { ...newCompoundBlock('', 8, i), ...b, colour: b.colour ?? paletteColour(i) };
     if (b.dilutionFactor !== undefined && b.dilutionFactorOverride === undefined) {
       block.dilutionFactorOverride = null; // the experiment's addition now governs
       delete (block as any).dilutionFactor;
@@ -403,4 +416,12 @@ export function triggerDownload(blob: Blob, filename: string): void {
 
 export function slug(s: string): string {
   return s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'experiment';
+}
+
+/**
+ * Module 3 as the plate leaves it: each dilution step sized by the wells painted with it.
+ * Everything that computes dilutions goes through here, so screen and exports agree.
+ */
+export function dilutionsWithPlate(project: Project): DilutionExperiment {
+  return { ...project.dilutions, wellsPerTreatment: wellsPerTreatment(project.layout) };
 }

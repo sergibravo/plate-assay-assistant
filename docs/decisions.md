@@ -264,6 +264,26 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
   so the rule cannot drift apart between screen and paper. Calculations are untouched — they
   stay at full precision and round only at the last moment.
 
+## Module 2 (2026-09-30)
+
+- **The plate is painted, not configured.** Pick a paint, then click or drag. Treatments live
+  on the wells rather than as column defaults, which removes the earlier "is a seeded row
+  crossing a treated column in play?" ambiguity entirely. Transfections keep a row default
+  because Sergi sometimes seeds a whole row and sometimes a single well.
+- **A well can hold several treatments**, since an inhibitor and a ligand share a well in some
+  experiments. Painting a second dose of the same compound replaces the first; painting a
+  different compound joins it. The grid shows the last paint with a `+n` marker, and the
+  export spells the combinations out.
+- **Erasing drags like painting.** An eraser is just another paint. Right-click lifts only the
+  last treatment off a well, leaving the rest — asked for after right-click-to-clear proved
+  too blunt for layered wells.
+- **One palette for the whole app.** A compound's colour is stored on its block and editable
+  from the plate, and its dilution steps shade from it, palest at the lowest dose. A colour
+  that means one thing on screen and another on paper would be worse than none.
+- **The plate sizes the compound dilutions.** Wells painted with a step × the volume added per
+  well replaces the typed figure for that step; unpainted steps keep theirs. The substrate is
+  deliberately left out, since it is not painted well by well.
+
 ## Open / deferred
 
 - Deeper UI polish (keyboard navigation, sidebar, density) waits until modules 2 and 3 exist,

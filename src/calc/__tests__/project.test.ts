@@ -1,3 +1,4 @@
+import { PALETTE } from '../palette';
 import { describe, expect, it } from 'vitest';
 import {
   addColumn,
@@ -249,7 +250,46 @@ describe('vehicle volume → buffer channel', () => {
   });
 
   it('leaves channels alone once a project already has them', () => {
-    const existing = [{ id: 'x', name: 'mine', volume_ul: 42, extraVolume_ul: 0, vehicle: 'aqueous' }];
+    const existing = [{ id: 'x', name: 'mine', volume_ul: 42, extraVolume_ul: 0, vehicle: 'aqueous', colour: '#047857' }];
     expect((migrate(base({ bufferChannels: existing })) as any).dilutions.bufferChannels).toEqual(existing);
+  });
+});
+
+describe('colours are assigned once and kept', () => {
+  it('a block saved before colours existed takes its place in the palette', () => {
+    const v5 = {
+      version: 5,
+      name: 'old', createdAt: '', updatedAt: '', notes: '',
+      transfection: { wellsPerCondition: 12, dna_ng_per_well: 100, optimem_ul_per_well: 10, peiDnaRatio: 3, pei_ug_per_ul: 1, dmem_ul_per_well: 100, cells_k_per_well: 30, transfectionMixExtra_ul: 0, cellSuspensionExtra_ul: 0 },
+      dnaStocks: [], compounds: [],
+      grid: { cols: 1, rowGroups: 1, colLabels: [''], rowGroupLabels: [''], conditions: [[]] },
+      dilutions: {
+        assayType: 'NanoBiT/BRET', dmsoOverride: null, addition: { compound_ul: 10, assayBuffer_ul: 80 },
+        dmsoPlacement: 'compound-only', bsa: { enabled: false, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' }, bufferNotes: '',
+        blocks: [
+          { id: 'a', name: 'Iso', volForWells_ul: 200, stockConc_uM: 10000, vehicle: 'aqueous', excludeFromVehicleMatch: false, logM: [-5], notes: '' },
+          { id: 'b', name: 'Nebi', volForWells_ul: 200, stockConc_uM: 10000, vehicle: 'DMSO', excludeFromVehicleMatch: false, logM: [-5], notes: '' },
+        ],
+      },
+    };
+    const m = migrate(v5) as any;
+    expect(m.dilutions.blocks[0].colour).toBe(PALETTE[0]);
+    expect(m.dilutions.blocks[1].colour).toBe(PALETTE[1]);
+  });
+
+  it('a colour already chosen is never overwritten', () => {
+    const chosen = '#ff0000';
+    const v5 = {
+      version: 5, name: 'x', createdAt: '', updatedAt: '', notes: '',
+      transfection: { wellsPerCondition: 12, dna_ng_per_well: 100, optimem_ul_per_well: 10, peiDnaRatio: 3, pei_ug_per_ul: 1, dmem_ul_per_well: 100, cells_k_per_well: 30, transfectionMixExtra_ul: 0, cellSuspensionExtra_ul: 0 },
+      dnaStocks: [], compounds: [],
+      grid: { cols: 1, rowGroups: 1, colLabels: [''], rowGroupLabels: [''], conditions: [[]] },
+      dilutions: {
+        assayType: 'NanoBiT/BRET', dmsoOverride: null, addition: { compound_ul: 10, assayBuffer_ul: 80 },
+        dmsoPlacement: 'compound-only', bsa: { enabled: false, targetPct: 0.01, stockPct: 5, placement: 'all-buffers' }, bufferNotes: '',
+        blocks: [{ id: 'a', name: 'Iso', colour: chosen, volForWells_ul: 200, stockConc_uM: 10000, vehicle: 'aqueous', excludeFromVehicleMatch: false, logM: [-5], notes: '' }],
+      },
+    };
+    expect((migrate(v5) as any).dilutions.blocks[0].colour).toBe(chosen);
   });
 });

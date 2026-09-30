@@ -84,7 +84,7 @@ describe('DERET substrate', () => {
 
 describe('substrate inside the experiment', () => {
   const block: CompoundBlock = {
-    id: 'b', name: 'Iso', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
+    id: 'b', name: 'Iso', colour: '#2563eb', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
     vehicle: 'DMSO', extraVolume_ul: 0, excludeFromVehicleMatch: false, logM: [-5, -6], stockBsaPct: null, notes: '',
   };
   const exp = (over: Partial<DilutionExperiment> = {}): DilutionExperiment => ({
@@ -211,7 +211,7 @@ describe('substrate inside the experiment', () => {
 
 describe('premix presentation', () => {
   const blocks: CompoundBlock[] = [
-    { id: 'b', name: 'Nebi', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
+    { id: 'b', name: 'Nebi', colour: '#2563eb', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
       vehicle: 'DMSO', extraVolume_ul: 0, excludeFromVehicleMatch: false, logM: [-5, -6], stockBsaPct: null, notes: '' },
   ];
   const base = (over: Partial<DilutionExperiment> = {}): DilutionExperiment => ({
@@ -272,7 +272,7 @@ describe('premix presentation', () => {
 
 describe('plain buffer is not a preparation', () => {
   const blocks: CompoundBlock[] = [
-    { id: 'b', name: 'Iso', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
+    { id: 'b', name: 'Iso', colour: '#2563eb', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
       vehicle: 'aqueous', extraVolume_ul: 0, excludeFromVehicleMatch: false, logM: [-5, -6], stockBsaPct: null, notes: '' },
   ];
   const plain = (over: Partial<DilutionExperiment> = {}): DilutionExperiment => ({

@@ -12,6 +12,7 @@ import {
 const block = (over: Partial<CompoundBlock> = {}): CompoundBlock => ({
   id: over.id ?? 'b',
   name: over.name ?? 'compound',
+  colour: '#2563eb',
   volForWells_ul: 200,
   dilutionFactorOverride: null,
   stockConc_uM: 10000,

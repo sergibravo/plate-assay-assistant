@@ -10,8 +10,9 @@ import {
 import type { Vehicle } from '../calc/types';
 import { fmtUl, logMToUM, NEGLIGIBLE_RELATIVE, round } from '../calc/units';
 import { exportDilutionsXlsx } from '../export/dilutionsheet';
+import { wellsPerTreatment } from '../calc/layout';
 import { defaultSubstrate, newSubstrateComponent, type SubstrateReference } from '../calc/substrate';
-import { emptyDilutions, newBufferChannel, newCompoundBlock, type Project } from '../state/project';
+import { dilutionsWithPlate, emptyDilutions, newBufferChannel, newCompoundBlock, type Project } from '../state/project';
 import { CalcField, ConfirmButton, Legend, NumField, Panel, Segmented, Warnings } from './components';
 
 const ASSAY_TYPES = Object.keys(ASSAY_PROFILES) as AssayType[];
@@ -35,7 +36,8 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
   // Projects are migrated on open, so this section is always present — but a missing one
   // must never blank the screen in the middle of an experiment.
   const exp = project.dilutions ?? emptyDilutions();
-  const result = useMemo(() => computeDilutions(exp), [exp]);
+  const result = useMemo(() => computeDilutions(dilutionsWithPlate(project)), [project]);
+  const plateWells = useMemo(() => wellsPerTreatment(project.layout), [project.layout]);
 
   const setExp = (patch: Partial<typeof exp>) =>
     update({ ...project, dilutions: { ...exp, ...patch } });
@@ -720,6 +722,19 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                   />
                 </div>
                 <NumField label="Vol for wells" unit="µl" value={block.volForWells_ul} onChange={(v) => setBlock(block.id, { volForWells_ul: v })} />
+                {(() => {
+                  const painted = block.logM.filter((v, i) => v !== null && (plateWells[`cmp:${block.id}:${i}`] ?? 0) > 0).length;
+                  const used = block.logM.filter((v) => v !== null && Number.isFinite(v)).length;
+                  if (painted === 0) return null;
+                  return (
+                    <p className="hint">
+                      The plate covers {painted} of {used} step{used === 1 ? '' : 's'} here, so{' '}
+                      {painted === used ? 'each is' : 'those are'} sized from the wells painted with
+                      {painted === 1 ? ' it' : ' them'} ({fmtUl(exp.addition.compound_ul)} µl a well).
+                      {painted < used ? ' The figure above covers the rest.' : ''}
+                    </p>
+                  );
+                })()}
                 <div className="field">
                   <label>Added differently<em className="sub"> (optional)</em></label>
                   <input

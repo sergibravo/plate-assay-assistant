@@ -77,7 +77,7 @@ describe('terbium labelling', () => {
 
 describe('DERET inside the experiment', () => {
   const block: CompoundBlock = {
-    id: 'b', name: 'Iso', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
+    id: 'b', name: 'Iso', colour: '#2563eb', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
     vehicle: 'DMSO', extraVolume_ul: 0, excludeFromVehicleMatch: false, logM: [-5, -6], stockBsaPct: null, notes: '',
   };
   const exp = (over: Partial<DilutionExperiment> = {}): DilutionExperiment => ({
@@ -161,7 +161,7 @@ describe('DERET inside the experiment', () => {
 
 describe('what sizes the buffer', () => {
   const block: CompoundBlock = {
-    id: 'b', name: 'Iso', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
+    id: 'b', name: 'Iso', colour: '#2563eb', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
     vehicle: 'aqueous', extraVolume_ul: 0, excludeFromVehicleMatch: false, logM: [-5, -6], stockBsaPct: null, notes: '',
   };
   const exp = (over: Partial<DilutionExperiment> = {}): DilutionExperiment => ({
@@ -221,7 +221,7 @@ describe('what sizes the buffer', () => {
 
 describe('a substrate left switched on cannot leak into DERET', () => {
   const block: CompoundBlock = {
-    id: 'b', name: 'Iso', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
+    id: 'b', name: 'Iso', colour: '#2563eb', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
     vehicle: 'aqueous', extraVolume_ul: 0, excludeFromVehicleMatch: false, logM: [-5], stockBsaPct: null, notes: '',
   };
   const exp = (assayType: 'DERET' | 'NanoBiT/BRET'): DilutionExperiment => ({
@@ -260,7 +260,7 @@ describe('a substrate left switched on cannot leak into DERET', () => {
 
 describe('sizing the buffer by the plate, and the vehicle channel', () => {
   const block: CompoundBlock = {
-    id: 'b', name: 'Nebi', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
+    id: 'b', name: 'Nebi', colour: '#2563eb', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
     vehicle: 'DMSO', extraVolume_ul: 0, excludeFromVehicleMatch: false, logM: [-5, -6], stockBsaPct: null, notes: '',
   };
   const exp = (over: Partial<DilutionExperiment> = {}): DilutionExperiment => ({
@@ -301,7 +301,7 @@ describe('sizing the buffer by the plate, and the vehicle channel', () => {
   });
 
   const vehicleChannel = (volume_ul: number, vehicle: 'aqueous' | 'DMSO' = 'DMSO') => [
-    { id: 'v', name: 'Vehicle alone', volume_ul, extraVolume_ul: 0, vehicle },
+    { id: 'v', name: 'Vehicle alone', volume_ul, extraVolume_ul: 0, vehicle, colour: '#667085' },
   ];
 
   it('a buffer channel is more of the compounds\' own diluent, and is not a compound', () => {
@@ -339,7 +339,7 @@ describe('sizing the buffer by the plate, and the vehicle channel', () => {
 
 describe('buffer channels beside the compounds', () => {
   const block: CompoundBlock = {
-    id: 'b', name: 'Nebi', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
+    id: 'b', name: 'Nebi', colour: '#2563eb', volForWells_ul: 200, dilutionFactorOverride: null, stockConc_uM: 10000,
     vehicle: 'DMSO', extraVolume_ul: 0, excludeFromVehicleMatch: false, logM: [-5], stockBsaPct: null, notes: '',
   };
   const exp = (channels: DilutionExperiment['bufferChannels']): DilutionExperiment => ({
@@ -361,8 +361,8 @@ describe('buffer channels beside the compounds', () => {
 
   it('several channels each go to the diluent their vehicle names', () => {
     const r = computeDilutions(exp([
-      { id: 'a', name: 'Vehicle control', volume_ul: 400, extraVolume_ul: 100, vehicle: 'DMSO' },
-      { id: 'b', name: 'Buffer only', volume_ul: 800, extraVolume_ul: 0, vehicle: 'aqueous' },
+      { id: 'a', name: 'Vehicle control', volume_ul: 400, extraVolume_ul: 100, vehicle: 'DMSO', colour: '#2563eb' },
+      { id: 'b', name: 'Buffer only', volume_ul: 800, extraVolume_ul: 0, vehicle: 'aqueous', colour: '#047857' },
     ]));
     expect(r.bufferChannels.map((c) => c.required_ul)).toEqual([500, 800]);
     expect(r.bufferChannels.map((c) => c.matched)).toEqual([true, false]);
@@ -371,14 +371,14 @@ describe('buffer channels beside the compounds', () => {
 
   it('their volumes reach the batch, and so the fluorescein', () => {
     const none = computeDilutions(exp([]));
-    const some = computeDilutions(exp([{ id: 'a', name: 'Vehicle', volume_ul: 4000, extraVolume_ul: 0, vehicle: 'DMSO' }]));
+    const some = computeDilutions(exp([{ id: 'a', name: 'Vehicle', volume_ul: 4000, extraVolume_ul: 0, vehicle: 'DMSO', colour: '#2563eb' }]));
     const batch = (r: typeof none) => r.recipes.find((x) => x.id === 'assay-buffer')!.prepare_ul;
     expect(batch(some)).toBeGreaterThan(batch(none));
     expect(some.fluorescein.intoBuffer!.stock_ul).toBeGreaterThan(none.fluorescein.intoBuffer!.stock_ul);
   });
 
   it('a channel is never a compound block', () => {
-    const r = computeDilutions(exp([{ id: 'a', name: 'Vehicle', volume_ul: 400, extraVolume_ul: 0, vehicle: 'DMSO' }]));
+    const r = computeDilutions(exp([{ id: 'a', name: 'Vehicle', volume_ul: 400, extraVolume_ul: 0, vehicle: 'DMSO', colour: '#2563eb' }]));
     expect(r.blocks.map((b) => b.name)).toEqual(['Nebi']);
   });
 });

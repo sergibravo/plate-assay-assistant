@@ -289,6 +289,17 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
   well replaces the typed figure for that step; unpainted steps keep theirs. The substrate is
   deliberately left out, since it is not painted well by well.
 
+## Two machines, one direction (2026-10-07)
+
+- **Development happens in one place; the work computer gets only the built HTML**, used to
+  run experiments. Experiments travel as `.assay.json` files in a synced folder, since browser
+  storage does not.
+- **A file saved by a newer build is refused, not read.** That workflow makes version skew
+  likely: the copy at work lags behind, and migrations only run forwards, so an unrecognised
+  file would otherwise be read as if it were current and produce numbers that look plausible.
+  The app now says which format the file is, which one it understands, and to copy the newer
+  HTML over.
+
 ## Open / deferred
 
 - Deeper UI polish (keyboard navigation, sidebar, density) waits until modules 2 and 3 exist,

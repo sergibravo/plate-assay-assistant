@@ -242,10 +242,26 @@ export function newProject(name = 'Untitled experiment'): Project {
 
 
 /**
+ * A file saved by a newer build than the one reading it. Migrations only ever run forwards,
+ * so such a file cannot be understood — and silently reading it as if it were current is the
+ * dangerous outcome, because the numbers would look plausible.
+ */
+export class FutureProjectError extends Error {
+  constructor(public fileVersion: number) {
+    super(
+      `This experiment was saved by a newer version of the app (file format ${fileVersion}, this copy understands ${PROJECT_VERSION}). Copy the latest "Plate Assay Assistant" file over this one and open it again.`,
+    );
+    this.name = 'FutureProjectError';
+  }
+}
+
+/**
  * Bring an older project file up to the current shape. Runs on every open and on the
  * localStorage autosave, so a file saved before a model change still works.
  */
 export function migrate(raw: any): Project {
+  const fileVersion = Number(raw?.version);
+  if (Number.isFinite(fileVersion) && fileVersion > PROJECT_VERSION) throw new FutureProjectError(fileVersion);
   const p = { ...raw };
   if (p.version === 1) {
     // v1 stored cells per well in millions; v2 stores thousands.

@@ -5,6 +5,7 @@ import {
   addRowGroup,
   clearCondition,
   enableCondition,
+  FutureProjectError,
   migrate,
   newProject,
   reconcileGrid,
@@ -291,5 +292,33 @@ describe('colours are assigned once and kept', () => {
       },
     };
     expect((migrate(v5) as any).dilutions.blocks[0].colour).toBe(chosen);
+  });
+});
+
+describe('a file from a newer build', () => {
+  const future = {
+    version: PROJECT_VERSION + 1,
+    name: 'saved at work', createdAt: '', updatedAt: '', notes: '',
+    transfection: {}, dnaStocks: [], compounds: [],
+    grid: { cols: 1, rowGroups: 1, colLabels: [''], rowGroupLabels: [''], conditions: [[]] },
+  };
+
+  it('is refused rather than read as if it were current', () => {
+    expect(() => migrate(future)).toThrow(FutureProjectError);
+  });
+
+  it('says what to do about it', () => {
+    try {
+      migrate(future);
+      expect.unreachable('should have thrown');
+    } catch (err) {
+      expect((err as Error).message).toMatch(/newer version/);
+      expect((err as Error).message).toMatch(/Copy the latest/);
+    }
+  });
+
+  it('still opens anything at or below the current format', () => {
+    expect(() => migrate({ ...future, version: PROJECT_VERSION })).not.toThrow();
+    expect(() => migrate({ ...future, version: 1, transfection: { cells_M_per_well: 0.03 } })).not.toThrow();
   });
 });

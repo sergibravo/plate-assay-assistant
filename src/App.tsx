@@ -29,11 +29,11 @@ export default function App() {
   const openFile = async (file: File) => {
     try {
       const raw = JSON.parse(await file.text());
-      if (!raw.version) throw new Error('not an assay project file');
+      if (!raw.version) throw new Error('that does not look like an assay project file.');
       setProject(migrate(raw));
       setOpenError(null);
     } catch (err) {
-      setOpenError(`Could not open ${file.name}: ${(err as Error).message}`);
+      setOpenError(`${file.name}: ${(err as Error).message}`);
     }
   };
 

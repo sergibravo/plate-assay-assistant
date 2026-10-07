@@ -33,6 +33,22 @@ works, so treat the JSON file as the real save.
 To give the file a version bump before sending, change `version` in `package.json` and
 rebuild — the version is part of the filename so two copies can be told apart.
 
+## Using it on another computer
+
+Copy only the built HTML file; the project is developed in one place. Keep it in a synced
+folder (OneDrive, Drive, Dropbox) alongside your `.assay.json` experiment files:
+
+```
+Plate assay app/
+  Plate Assay Assistant 1.0.0.html
+  experiments/2026-10-07 iso-vs-nebi.assay.json
+```
+
+The app opens empty on a machine it has not been used on — browser storage does not travel —
+so **Open…** the experiment file you want and **Save project** when you are done. Never have
+the same `.assay.json` open on two machines at once, or the folder sync will pick a winner
+for you.
+
 ## Printing a bench sheet
 
 The **Print bench sheet** button on each module prints what is on screen, minus the controls.

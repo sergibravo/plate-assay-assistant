@@ -33,9 +33,25 @@ works, so treat the JSON file as the real save.
 To give the file a version bump before sending, change `version` in `package.json` and
 rebuild — the version is part of the filename so two copies can be told apart.
 
+## Developing on more than one computer
+
+The source lives in a private GitHub repository. On a new machine, install Git and Node.js
+(LTS), clone it into a normal folder — **not** a synced one, since `node_modules` differs
+between macOS and Windows — and install once:
+
+```bash
+git clone https://github.com/sergibravo/plate-assay-assistant.git
+cd plate-assay-assistant
+npm install
+```
+
+Then `git pull` before starting and `git push` when stopping. On Windows, also run
+`git config core.autocrlf false` and `git config core.fileMode false` in the clone so files
+stay byte-identical to the Mac's.
+
 ## Using it on another computer
 
-Copy only the built HTML file; the project is developed in one place. Keep it in a synced
+Copy only the built HTML file. Keep it in a synced
 folder (OneDrive, Drive, Dropbox) alongside your `.assay.json` experiment files:
 
 ```

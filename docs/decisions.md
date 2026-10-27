@@ -300,6 +300,20 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
   The app now says which format the file is, which one it understands, and to copy the newer
   HTML over.
 
+## Two development machines (2026-10-27)
+
+- **Development now happens on a Mac and a Windows PC, with GitHub between them.** The source
+  lives in a private repository (`sergibravo/plate-assay-assistant`), and each machine keeps its
+  own clone *outside* any synced folder. Pull before starting, push when stopping. A synced
+  folder was tried as the carrier and rejected: `node_modules` holds platform-specific binaries
+  (the Mac's esbuild/rollup do not run on Windows), and a sync landing halfway through a git
+  operation can corrupt `.git`.
+- **The Windows clone sets `core.autocrlf=false` and `core.fileMode=false`.** Files keep the
+  Mac's LF endings byte for byte, and Windows' inability to record an executable bit no longer
+  shows a reference workbook as modified.
+- Unchanged: the work computer still gets only the built HTML, and experiments still travel as
+  `.assay.json` files in the synced folder.
+
 ## Open / deferred
 
 - Deeper UI polish (keyboard navigation, sidebar, density) waits until modules 2 and 3 exist,

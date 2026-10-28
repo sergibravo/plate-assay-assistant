@@ -14,6 +14,7 @@ import {
   removeRowGroup,
 } from '../../state/project';
 import { computeGrid } from '../transfection';
+import { emptyLayout } from '../layout';
 
 describe('grid editing', () => {
   const base = newProject();
@@ -62,6 +63,15 @@ describe('enable / clear a condition', () => {
 });
 
 describe('project migration', () => {
+  it('keeps a 384-well plate under a 96-well transfection', () => {
+    const p = newProject();
+    p.layout = { ...emptyLayout('384-well'), wells: { P24: { treatment: 'x' } as any } };
+    const back = migrate(JSON.parse(JSON.stringify(p)));
+    expect(back.layout.format).toBe('384-well');
+    expect(back.layout.rowTime).toHaveLength(16);
+    expect(back.layout.wells.P24).toBeDefined();
+  });
+
   it('turns old margins into the volumes they stood for, per the conditions in use', () => {
     const used = { entries: [{ dnaStockId: 'a', pct: 1 }] };
     const v3 = {

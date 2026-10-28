@@ -6,7 +6,7 @@
 
 import type { BufferChannel, CompoundBlock, DilutionExperiment, Inhibitor, InhibitorStep } from '../calc/dilutions';
 import { defaultFluorescein, defaultTb } from '../calc/deret';
-import { emptyLayout, reshapeLayout, wellsPerTreatment, type PlateLayout } from '../calc/layout';
+import { emptyLayout, wellsPerTreatment, type PlateLayout } from '../calc/layout';
 import { NEUTRAL, paletteColour } from '../calc/palette';
 import { defaultSubstrate } from '../calc/substrate';
 import type {
@@ -364,10 +364,10 @@ export function migrate(raw: any): Project {
   p.dilutions.inhibitors = { ...defaultInhibitorStep(), ...(p.dilutions.inhibitors ?? {}) };
   p.dilutions.inhibitors.items = (p.dilutions.inhibitors.items ?? []).map((i: any, n: number) => ({ ...newInhibitor('', n), ...i }));
   // Module 2 arrived after these files existed; an older one simply has an empty plate.
+  // The plate keeps the format it was saved in: module 2 sets it on its own (a 384-well DMR
+  // plate under a 96-well transfection), and reshaping it here would drop the wells that
+  // don't fit.
   p.layout = p.layout ?? emptyLayout(p.transfection?.plateFormat ?? '96-well');
-  if (p.transfection?.plateFormat && p.layout.format !== p.transfection.plateFormat) {
-    p.layout = reshapeLayout(p.layout, p.transfection.plateFormat);
-  }
   p.dilutions.wells = p.dilutions.wells ?? null;
   p.dilutions.wellBufferExtra_ul = p.dilutions.wellBufferExtra_ul ?? 0;
   // The single "vehicle alone" volume became a list of buffer channels. Read the stored

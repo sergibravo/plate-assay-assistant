@@ -314,9 +314,45 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
 - Unchanged: the work computer still gets only the built HTML, and experiments still travel as
   `.assay.json` files in the synced folder.
 
+## DMR and inhibitors (2026-10-27)
+
+- **DMR is a fourth assay type**, label-free: no substrate (one left switched on from another
+  assay never reaches a volume, as in DERET). Diluent HBSS/HEPES; BSA and DMSO matching stay
+  optional exactly as elsewhere. No reference sheet — the compound maths is the existing one.
+- **In DMR, DMSO is one % in everything the cells meet** — the wash buffer, the inhibitors and
+  their vehicle, the compounds — at the highest any of them needs (lab rule, 2026-10-28). The
+  placement choice is therefore hidden for DMR. The wash buffer is sized for what stays on the
+  cells; the plate layout says nothing about the wash.
+- **The compound plate mirrors the cell plate** and is the same format (a 384-well under a
+  384-well cell plate) — module 2 says so. Each well holds 22–25 µl (25 by default) so the
+  transfer robot never runs dry, of which 10 µl reaches the cells. A painted well is therefore
+  sized at the compound-plate volume, not the addition. It is an optional field for every
+  assay, set by "Use DMR volumes".
+- **Inhibitors are a step before the compounds**: several per run, one concentration each,
+  plus a DMSO-matched vehicle; every well gets one or the other, so the well becomes
+  20 + 10 + 10 µl. Switching the step on takes the inhibitor volume out of the well buffer, so
+  the compound's ×4 does not move. Inhibitor concentrations are quoted **before** the
+  compounds go in; the fold is the user's to choose per inhibitor, defaulting to the volumes
+  (×3), as compounds default to ×4 and keep their "added differently" override.
+- In the other assays, with DMSO only in the additions, inhibitors are matched among
+  themselves rather than to the compounds, which keeps the well lowest at the cost of a third
+  premix when the two levels differ. With DMSO in every buffer they share one level.
+- **Inhibitors are pipetted by hand**, so each well is prepared at the 10 µl added — a default
+  the user can raise ("prepare per well"), plus an extra per inhibitor. They and their vehicle
+  are painted on the plate (one per well) and sized from it.
+- **DMSO % is shown to two decimals** (0.39 %, not 0.3898 %) — the rest is below pipetting
+  error. Under 0.01 % it keeps two significant figures. Display only; the DMSO pipetted is
+  computed at full precision (`fmtDmsoPct`).
+- **Nothing above the plate may change size while painting.** The plate's messages moved below
+  it, well labels sit in a fixed box, and the selected paint chip no longer turns bold — each
+  of these shifted the plate under the pointer, so a drag landed on wells nobody meant.
+- **File format 6.** An older build would misread a DMR file (unknown assay, inhibitors
+  dropped), so it now refuses it instead.
+
 ## Open / deferred
 
 - Deeper UI polish (keyboard navigation, sidebar, density) waits until modules 2 and 3 exist,
   so navigation is designed once rather than three times.
 - Module 4 (plate-reader output reshaper) stays a stub with a clean seam until 1–3 are done.
-- Module 3 is complete for NanoBiT/BRET, HiBiT and DERET.
+- Module 3 is complete for NanoBiT/BRET, HiBiT, DERET and DMR.
+- **Next up:** module 1 for larger transfections — a 6 cm dish as well as 96-well plates.

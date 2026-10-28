@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ceilingTo1, fmtUl, logMToUM, round, roundUl, uMToLogM } from '../units';
+import { ceilingTo1, fmtDmsoPct, fmtUl, logMToUM, round, roundDmsoPct, roundUl, uMToLogM } from '../units';
 
 describe('volumes are shown to what a pipette can deliver', () => {
   it('two decimals at 10 µl and below', () => {
@@ -45,5 +45,18 @@ describe('the other helpers still behave', () => {
 
   it('round keeps its explicit precision', () => {
     expect(round(1.23456, 3)).toBe(1.235);
+  });
+});
+
+describe('DMSO % is shown to what pipetting can deliver', () => {
+  it('two decimals: 0.3898283 % reads 0.39 %', () => {
+    expect(roundDmsoPct(0.3898283)).toBe(0.39);
+    expect(fmtDmsoPct(0.003898283)).toBe('0.39 %');
+    expect(fmtDmsoPct(0.004)).toBe('0.4 %');
+  });
+
+  it('a value under 0.01 % keeps two significant figures rather than reading as 0', () => {
+    expect(roundDmsoPct(0.0012345)).toBe(0.0012);
+    expect(fmtDmsoPct(0)).toBe('0 %');
   });
 });

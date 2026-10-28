@@ -46,6 +46,23 @@ export function fmtUl(x: number | null | undefined): string {
   return String(roundUl(x));
 }
 
+/**
+ * DMSO % for display. Past two decimals the digits are below what pipetting can deliver —
+ * 0.3898 % and 0.39 % are the same buffer at the bench — so two decimals it is. A value under
+ * 0.01 % would read as 0, so it keeps two significant figures instead.
+ *
+ * Display only, like `roundUl`: the DMSO actually pipetted is computed at full precision.
+ */
+export function roundDmsoPct(pct: number): number {
+  if (!Number.isFinite(pct) || pct === 0) return pct;
+  return Math.abs(pct) >= 0.01 ? round(pct, 2) : Number(pct.toPrecision(2));
+}
+
+/** A DMSO fraction (0.0039) as it reads on screen and paper: "0.39 %". */
+export function fmtDmsoPct(fraction: number): string {
+  return `${roundDmsoPct(fraction * 100)} %`;
+}
+
 /** logM → µM. `10^logM` is molar; ×1e6 gives µM. */
 export function logMToUM(logM: number): number {
   return 10 ** logM * 1e6;

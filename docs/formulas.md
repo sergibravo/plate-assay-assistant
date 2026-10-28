@@ -96,13 +96,16 @@ with per-well painting when it is not.
 | --- | --- |
 | A well's cells | its own `transfectionId`, else the row's |
 | Painting a step | replaces another step of the same compound, joins anything else |
+| Painting an inhibitor | replaces any other inhibitor or the inhibitor vehicle — a well gets one |
 | Wells per treatment | how many wells carry that id |
 | Replicate group | same cells, same treatments, same time point |
 
 **The plate sizes the dilution steps.** `wellsPerTreatment` feeds module 3, where a step's
-volume becomes `wells painted × µl added per well`, plus that block's extra. A step nobody
-paints keeps the block's typed "vol for wells", and the substrate keeps its own count — it is
-not painted. See `stepVolume` in `dilutions.ts`.
+volume becomes `wells painted × µl added per well` (or per compound-plate well, when one is
+set), plus that block's extra. A step nobody paints keeps the block's typed "vol for wells",
+and the substrate keeps its own count — it is not painted. Inhibitors and their vehicle are
+painted like compounds and sized the same way, falling back to a typed well count. See
+`stepVolume` in `dilutions.ts`.
 
 **Colours** come from one palette (`src/calc/palette.ts`) so a compound is the same colour on
 the plate, in module 3 and in both exports. A dilution series shades from its compound's
@@ -241,6 +244,36 @@ substrate defaults, and declares what is still outstanding (asserted by a test):
 | NanoBiT/BRET | assay buffer | 10 µl/well, 1:1000 in the well, counted after compounds | — |
 | HiBiT | assay buffer (identical maths) | 50 µl/well, substrate 1:100 and LgBiT 1:200, counted in the well **before** compounds | — |
 | DERET | **furimazine solution** | off | preparing the furimazine the compounds are diluted in |
+| DMR | **HBSS/HEPES** (label-free) | none — no substrate step at all | the wash before the run |
+
+### DMR: compound plate and inhibitors
+
+No sheet exists for DMR; it reuses the compound maths unchanged. Two additions, both open to
+every assay but defaulted for DMR ("Use DMR volumes": 30 µl buffer + 10 µl compound, compound
+plate 25 µl):
+
+| Quantity | Formula |
+| --- | --- |
+| Per painted well (`perWellPrepared`) | compound-plate µl per well if set, else the µl added |
+| Painted step volume | `wells painted × perWellPrepared` |
+| Wells the series covers | `Σ step volume / perWellPrepared` |
+| Well | `assay buffer + substrate + inhibitor + compound` (20 + 0 + 10 + 10 = 40 µl) |
+| Compound fold | `well / compound` = ×4, per-block override as before |
+| Inhibitor fold (default) | `(well − compound) / inhibitor` = ×3, per-inhibitor override |
+| Inhibitor per well (`inhibitorPerWell`) | "prepare per well" if set, else the µl added (10) — pipetted by hand, never the compound plate |
+| Inhibitor tube | the top tube of a one-row series at that fold: `D = CEILING(wells × perWell + extra, 1)`, `E = D × conc × fold / S` |
+| Inhibitor DMSO load | `MAX over DMSO inhibitors of E/D` |
+| Vehicle | `vehicle wells × perWell + extra`, of the inhibitors' DMSO diluent |
+| DMSO in DMR (`dmsoEverywhere`) | one target for everything, `MAX(compound load, inhibitor load)` — wash buffer, inhibitors, vehicle and compounds alike; the well sits at it throughout |
+| Elsewhere, DMSO in every buffer | the same shared `MAX` |
+| Elsewhere, DMSO only in the additions | inhibitors matched among themselves; in the well `target_cmp × cmp/well + target_inh × inh/well`, before compounds `target_inh × inh / (well − compound)` |
+
+In DMR the "where the DMSO sits" choice is not offered (`dmsoPlacementOf` returns
+`all-buffers`), and the well buffer is named the wash buffer — sized for what stays on the
+cells; the washes themselves go in as extra well buffer. Only when DMSO sits in the additions
+alone (other assays) can the inhibitors need their own DMSO diluent (`inhibitor-dmso`).
+Inhibitor solutions are made up in the BSA diluents, so with BSA only in the additions the
+well collects BSA from both.
 
 ### Substrate (`src/calc/substrate.ts`)
 

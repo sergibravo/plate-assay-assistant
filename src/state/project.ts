@@ -4,7 +4,7 @@
  * localStorage autosave for convenience. No server, no database.
  */
 
-import type { BufferChannel, CompoundBlock, DilutionExperiment } from '../calc/dilutions';
+import type { BufferChannel, CompoundBlock, DilutionExperiment, Inhibitor, InhibitorStep } from '../calc/dilutions';
 import { defaultFluorescein, defaultTb } from '../calc/deret';
 import { emptyLayout, reshapeLayout, wellsPerTreatment, type PlateLayout } from '../calc/layout';
 import { NEUTRAL, paletteColour } from '../calc/palette';
@@ -17,7 +17,7 @@ import type {
   TransfectionParams,
 } from '../calc/types';
 
-export const PROJECT_VERSION = 5 as const;
+export const PROJECT_VERSION = 6 as const;
 
 export interface Project {
   version: typeof PROJECT_VERSION;
@@ -177,6 +177,28 @@ export function newCompoundBlock(name = '', rows = 8, index = 0): CompoundBlock 
   };
 }
 
+/** One inhibitor at a single concentration, from a 10 mM DMSO stock. */
+export function newInhibitor(name = '', index = 0): Inhibitor {
+  return {
+    id: uid('inh'),
+    name,
+    // Inhibitors take the palette from the far end, so they rarely share a compound's colour.
+    colour: paletteColour(7 - index),
+    conc_uM: 1,
+    foldOverride: null,
+    stockConc_uM: 10000,
+    vehicle: 'DMSO',
+    stockBsaPct: null,
+    wells: 0,
+    extraVolume_ul: 50,
+    notes: '',
+  };
+}
+
+export function defaultInhibitorStep(): InhibitorStep {
+  return { enabled: false, volumePerWell_ul: 10, items: [], preparedPerWell_ul: null, vehicleWells: 0, vehicleExtra_ul: 50, vehicleColour: '#98a2b3' };
+}
+
 export function emptyDilutions(): DilutionExperiment {
   return {
     assayType: 'NanoBiT/BRET',
@@ -186,7 +208,9 @@ export function emptyDilutions(): DilutionExperiment {
     wells: null,
     wellBufferExtra_ul: 0,
     bufferChannels: [],
-    premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null },
+    premixOverrides: { 'assay-buffer': null, normal: null, dmso: null, 'inhibitor-dmso': null, well: null, substrate: null },
+    compoundPlate_ul: null,
+    inhibitors: defaultInhibitorStep(),
     substrate: defaultSubstrate('NanoBiT/BRET'),
     fluorescein: defaultFluorescein(),
     tb: defaultTb(),
@@ -320,6 +344,11 @@ export function migrate(raw: any): Project {
     }
     p.version = 5;
   }
+  if (p.version === 5) {
+    // v6 adds DMR, the compound plate and the inhibitor step. An older file has none of them,
+    // and the defaults below (no compound plate, step off) leave every number as it was.
+    p.version = 6;
+  }
   p.dnaStocks = (p.dnaStocks ?? []).map((s: any) => ({ plasmidId: '', notes: '', ...s }));
   // Fields added after a project was saved fall back to the previous behaviour.
   p.transfection = { optimemMode: 'fixed', ...p.transfection };
@@ -331,6 +360,9 @@ export function migrate(raw: any): Project {
   p.dilutions.premixOverrides = { ...emptyDilutions().premixOverrides, ...(p.dilutions.premixOverrides ?? {}) };
   p.dilutions.bufferChannels = (p.dilutions.bufferChannels ?? []).map((c: any) => ({ colour: NEUTRAL, ...c }));
   p.dilutions.substrate = p.dilutions.substrate ?? defaultSubstrate(p.dilutions.assayType ?? 'NanoBiT/BRET');
+  p.dilutions.compoundPlate_ul = p.dilutions.compoundPlate_ul ?? null;
+  p.dilutions.inhibitors = { ...defaultInhibitorStep(), ...(p.dilutions.inhibitors ?? {}) };
+  p.dilutions.inhibitors.items = (p.dilutions.inhibitors.items ?? []).map((i: any, n: number) => ({ ...newInhibitor('', n), ...i }));
   // Module 2 arrived after these files existed; an older one simply has an empty plate.
   p.layout = p.layout ?? emptyLayout(p.transfection?.plateFormat ?? '96-well');
   if (p.transfection?.plateFormat && p.layout.format !== p.transfection.plateFormat) {

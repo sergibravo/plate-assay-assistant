@@ -12,7 +12,7 @@
  * module 3 how much of it to prepare.
  */
 
-import type { DilutionExperiment } from './dilutions';
+import { INHIBITOR_VEHICLE_PAINT, type DilutionExperiment } from './dilutions';
 import { NEUTRAL, paletteColour, shade } from './palette';
 import { logMToUM } from './units';
 import { PLATE_GEOMETRY, type DnaMixGrid, type PlateFormat } from './types';
@@ -41,7 +41,7 @@ export interface Paint {
   /** For the well itself, where there is no room. */
   short: string;
   colour: string;
-  kind: 'transfection' | 'compound' | 'channel';
+  kind: 'transfection' | 'compound' | 'channel' | 'inhibitor';
   /** Compounds only: which block and step, so the plate can size that step. */
   blockId?: string;
   stepIndex?: number;
@@ -135,6 +135,25 @@ export function treatmentPaints(exp: DilutionExperiment): Paint[] {
       kind: 'channel',
     });
   }
+  // Only while the step is on: switching it off must not leave stale paints behind.
+  if (exp.inhibitors?.enabled) {
+    for (const inh of exp.inhibitors.items) {
+      paints.push({
+        id: `inh:${inh.id}`,
+        label: `${inh.name || 'inhibitor'} ${concentrationLabel(Math.log10(inh.conc_uM) - 6)}`,
+        short: (inh.name || 'inhibitor').slice(0, 10),
+        colour: inh.colour || NEUTRAL,
+        kind: 'inhibitor',
+      });
+    }
+    paints.push({
+      id: INHIBITOR_VEHICLE_PAINT,
+      label: 'Inhibitor vehicle',
+      short: 'inh. vehicle',
+      colour: exp.inhibitors.vehicleColour || NEUTRAL,
+      kind: 'inhibitor',
+    });
+  }
   return paints;
 }
 
@@ -175,11 +194,17 @@ export function isUsed(w: Well): boolean {
   return w.transfectionId !== null || w.treatments.length > 0;
 }
 
-/** Paint one treatment onto a well: it replaces another step of the same compound, and joins anything else. */
+/**
+ * Paint one treatment onto a well: it replaces another step of the same compound, an
+ * inhibitor replaces any other inhibitor (a well gets one, or the vehicle), and anything
+ * else joins what is there.
+ */
 export function addTreatment(current: string[], paint: Paint): string[] {
   const withoutSameBlock = paint.blockId
     ? current.filter((id) => !id.startsWith(`cmp:${paint.blockId}:`))
-    : current.filter((id) => id !== paint.id);
+    : paint.kind === 'inhibitor'
+      ? current.filter((id) => !id.startsWith('inh:'))
+      : current.filter((id) => id !== paint.id);
   return [...withoutSameBlock, paint.id];
 }
 

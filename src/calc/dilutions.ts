@@ -30,13 +30,13 @@ import {
 } from './deret';
 import { computeSubstrate, defaultSubstrate, type SubstrateResult, type SubstrateSettings } from './substrate';
 import type { Vehicle, Warning } from './types';
-import { ceilingTo1, DMSO_IN_WELL_CONCERN, logMToUM, MIN_PIPETTE_UL, NEGLIGIBLE_RELATIVE, round } from './units';
+import { ceilingTo1, DMSO_IN_WELL_CONCERN, fmtDmsoPct, logMToUM, MIN_PIPETTE_UL, NEGLIGIBLE_RELATIVE, round } from './units';
 
 /**
  * What the compounds are diluted into, and what else the assay needs prepared.
  * Only the compound side is calculated today; `pending` says so out loud per assay.
  */
-export type AssayType = 'NanoBiT/BRET' | 'HiBiT' | 'DERET';
+export type AssayType = 'NanoBiT/BRET' | 'HiBiT' | 'DERET' | 'DMR';
 
 export interface AssayProfile {
   /** What the serial dilutions are made up in. */
@@ -48,6 +48,13 @@ export interface AssayProfile {
   compoundsComplete: boolean;
   /** Parts of this assay the app does not calculate yet. Displayed, never hidden. */
   pending: string[];
+  /**
+   * Every liquid that touches the cells carries the same DMSO — the highest any addition
+   * needs — so the choice of where DMSO sits is not offered. `undefined` = the user chooses.
+   */
+  dmsoEverywhere?: boolean;
+  /** What the buffer already on the cells is called, when it is more than "the well". */
+  wellBufferName?: string;
 }
 
 export const ASSAY_PROFILES: Record<AssayType, AssayProfile> = {
@@ -78,7 +85,74 @@ export const ASSAY_PROFILES: Record<AssayType, AssayProfile> = {
       'Terbium labels the cells first and is washed out before the assay, so it is prepared separately and never enters the well composition.',
     ],
   },
+  DMR: {
+    // Label-free: nothing to detect with, so the well is buffer, compound and, optionally,
+    // an inhibitor that goes on first.
+    diluent: 'HBSS/HEPES',
+    normalBufferName: 'HBSS/HEPES (no DMSO)',
+    dmsoBufferName: 'HBSS/HEPES + DMSO',
+    compoundsComplete: true,
+    dmsoEverywhere: true,
+    wellBufferName: 'Wash buffer — what stays on the cells',
+    pending: [
+      'Label-free, so there is no substrate. The cells are washed into the buffer before the run: the wash buffer is prepared at the same DMSO as everything else, sized for what stays on the cells — add the volume the washes themselves use as extra well buffer.',
+      'DMSO is the same in every liquid the cells meet — the wash buffer, the inhibitors and their vehicle, and the compounds — at the highest % any addition needs, so the cells never see it change.',
+      'Compounds go on from a compound plate that mirrors the cell plate, so each painted well is sized at what a compound-plate well holds, not at the 10 µl the cells receive. Inhibitors (or their vehicle) are pipetted by hand before the compounds — switch the inhibitor step on below when the run uses them.',
+    ],
+  },
 };
+
+/** Where the DMSO sits: the assay's rule when it has one, otherwise the user's choice. */
+export function dmsoPlacementOf(exp: DilutionExperiment): Placement {
+  return ASSAY_PROFILES[exp.assayType]?.dmsoEverywhere ? 'all-buffers' : exp.dmsoPlacement;
+}
+
+/** Default volumes for a DMR run: 30 µl on the cells after the wash, 10 µl of compound. */
+export const DMR_ADDITION: AdditionSettings = { assayBuffer_ul: 30, compound_ul: 10 };
+/** What a compound-plate well holds, so the transfer robot never runs dry (22–25 µl). */
+export const DMR_COMPOUND_PLATE_UL = 25;
+
+/**
+ * Inhibitors and the like: one concentration each, added to the well before the compounds.
+ * Every well in such a run receives one of them or the matched vehicle, so the well is
+ * assay buffer + inhibitor + compound — 20 + 10 + 10 µl in DMR.
+ */
+export interface Inhibitor {
+  id: string;
+  name: string;
+  colour: string;
+  /** Concentration in the well before the compounds go in (µM). */
+  conc_uM: number;
+  /** How concentrated the solution is made. `null` follows the volumes (×3 for 10 into 30). */
+  foldOverride: number | null;
+  stockConc_uM: number;
+  vehicle: Vehicle;
+  /** % BSA already in this stock; `null` when it carries none. */
+  stockBsaPct: number | null;
+  /** Wells to fill when the plate does not paint this inhibitor. */
+  wells: number;
+  extraVolume_ul: number;
+  notes: string;
+}
+
+export interface InhibitorStep {
+  enabled: boolean;
+  /** µl of inhibitor (or vehicle) solution added to each well. */
+  volumePerWell_ul: number;
+  /**
+   * Inhibitors are pipetted by hand, so each well needs just what is added; raise it to keep
+   * some in hand. `null` = the volume added.
+   */
+  preparedPerWell_ul?: number | null;
+  items: Inhibitor[];
+  /** Wells receiving the matched vehicle instead, when the plate does not paint it. */
+  vehicleWells: number;
+  vehicleExtra_ul: number;
+  vehicleColour: string;
+}
+
+/** Paint id of the inhibitor vehicle on the plate; each inhibitor is `inh:<id>`. */
+export const INHIBITOR_VEHICLE_PAINT = 'inh:vehicle';
 
 /**
  * The well described by volumes rather than by an order of pipetting: plain assay buffer,
@@ -102,19 +176,49 @@ export interface AdditionSettings {
  * total, not the addition factor, not a premix.
  */
 export function substrateInWell(exp: DilutionExperiment): SubstrateSettings | null {
-  if (exp.assayType === 'DERET') return null;
+  if (exp.assayType === 'DERET' || exp.assayType === 'DMR') return null;
   return exp.substrate?.enabled ? exp.substrate : null;
+}
+
+/** The inhibitor step when it is switched on, or `null`. */
+export function inhibitorsInWell(exp: DilutionExperiment): InhibitorStep | null {
+  const step = exp.inhibitors;
+  return step?.enabled && step.volumePerWell_ul > 0 ? step : null;
 }
 
 /** Everything that ends up in the well. */
 export function wellTotal(exp: DilutionExperiment): number {
   const substrate = substrateInWell(exp)?.volumePerWell_ul ?? 0;
-  return exp.addition.assayBuffer_ul + substrate + exp.addition.compound_ul;
+  const inhibitor = inhibitorsInWell(exp)?.volumePerWell_ul ?? 0;
+  return exp.addition.assayBuffer_ul + substrate + inhibitor + exp.addition.compound_ul;
 }
 
 export function additionFactor(exp: DilutionExperiment): number {
   const c = exp.addition.compound_ul;
   return c > 0 ? wellTotal(exp) / c : 1;
+}
+
+/**
+ * The fold an inhibitor is made at unless it says otherwise: what is in the well before the
+ * compounds, over the inhibitor's own volume — 10 µl into 20 µl of buffer is ×3.
+ */
+export function defaultInhibitorFold(exp: DilutionExperiment): number {
+  const v = inhibitorsInWell(exp)?.volumePerWell_ul ?? 0;
+  return v > 0 ? (wellTotal(exp) - exp.addition.compound_ul) / v : 1;
+}
+
+export function inhibitorFold(exp: DilutionExperiment, inh: Inhibitor): number {
+  return inh.foldOverride ?? defaultInhibitorFold(exp);
+}
+
+/**
+ * What one painted well needs prepared. Pipetted straight from the tube, that is the volume
+ * added; transferred from a compound plate that mirrors the cell plate, it is what a
+ * compound-plate well has to hold, of which only the addition reaches the cells.
+ */
+export function perWellPrepared(exp: DilutionExperiment, added_ul = exp.addition.compound_ul): number {
+  const plate = exp.compoundPlate_ul;
+  return plate !== null && plate !== undefined && plate > 0 ? plate : added_ul;
 }
 
 /**
@@ -140,7 +244,7 @@ export interface BsaSettings {
   placement: Placement;
 }
 
-export type DiluentId = 'assay-buffer' | 'normal' | 'dmso' | 'well' | 'substrate';
+export type DiluentId = 'assay-buffer' | 'normal' | 'dmso' | 'inhibitor-dmso' | 'well' | 'substrate';
 
 /** How to premix one diluent, from the bottom of the tube upwards. */
 export interface DiluentRecipe {
@@ -269,7 +373,14 @@ export interface DilutionExperiment {
    * Prepare more (or less) of a diluent than suggested. `null` = follow the suggestion.
    * Someone topping up a stock bottle, or wanting a round 5 ml, sets it here.
    */
-  premixOverrides: Record<DiluentId, number | null>;
+  premixOverrides: Partial<Record<DiluentId, number | null>>;
+  /**
+   * µl each compound-plate well holds, when compounds reach the cells from a plate that
+   * mirrors the cell plate (DMR). `null` = pipetted straight from the tubes.
+   */
+  compoundPlate_ul?: number | null;
+  /** Inhibitors (or their matched vehicle), added before the compounds. */
+  inhibitors?: InhibitorStep;
   /** The detection reagent, prepared in the same assay buffer as the well. */
   substrate: SubstrateSettings;
   /** DERET only: the fluorescein every buffer carries. */
@@ -372,10 +483,51 @@ export interface DilutionResult {
     /** True when it carries the matched DMSO rather than being plain buffer. */
     matched: boolean;
   }[];
+  /** The inhibitor step, or `null` when it is off. */
+  inhibitors: InhibitorResult | null;
   /** DERET only; inert for the other assays. */
   fluorescein: FluoresceinResult;
   tb: TbResult;
   warnings: Warning[];
+}
+
+export interface InhibitorItemResult {
+  id: string;
+  name: string;
+  fold: number;
+  tubeConc_uM: number;
+  wells: number;
+  /** True when the plate says how many wells, rather than the typed figure. */
+  painted: boolean;
+  /** For wells (µl), before the extra. */
+  forWells_ul: number;
+  /** The single tube, worked out exactly like the top tube of a compound series. */
+  tube: TubeRow | null;
+  warnings: Warning[];
+}
+
+export interface InhibitorResult {
+  defaultFold: number;
+  /** µl prepared per well — a compound-plate well, or the addition itself. */
+  perWell_ul: number;
+  items: InhibitorItemResult[];
+  vehicle: {
+    wells: number;
+    painted: boolean;
+    required_ul: number;
+    /** Which diluent the vehicle simply is. */
+    diluent: DiluentId;
+    matched: boolean;
+  };
+  /** DMSO every inhibitor solution, and the vehicle, is brought to. */
+  computedTarget: number;
+  target: number;
+  /** True when that is the compounds' DMSO diluent too, so no separate premix is made. */
+  sharesCompoundDiluent: boolean;
+  /** DMSO the cells sit in once the inhibitor is on, before any compound. */
+  inWellDmsoBeforeCompounds: number;
+  totalNormalBuffer_ul: number;
+  totalDmsoBuffer_ul: number;
 }
 
 /**
@@ -388,8 +540,57 @@ export function stepVolume(
   stepIndex: number,
 ): number {
   const painted = exp.wellsPerTreatment?.[`cmp:${block.id}:${stepIndex}`];
-  if (painted !== undefined && painted > 0) return painted * exp.addition.compound_ul;
+  if (painted !== undefined && painted > 0) return painted * perWellPrepared(exp);
   return block.volForWells_ul;
+}
+
+/** µl prepared for each inhibitor well — never the compound plate, since they go on by hand. */
+export function inhibitorPerWell(step: InhibitorStep): number {
+  const set = step.preparedPerWell_ul;
+  return set !== null && set !== undefined && set > 0 ? set : step.volumePerWell_ul;
+}
+
+/** Wells an inhibitor (or the vehicle) covers: painted on the plate, else the typed count. */
+function inhibitorWells(exp: DilutionExperiment, paintId: string, typed: number): { wells: number; painted: boolean } {
+  const painted = exp.wellsPerTreatment?.[paintId];
+  if (painted !== undefined && painted > 0) return { wells: painted, painted: true };
+  return { wells: Math.max(0, typed), painted: false };
+}
+
+/**
+ * An inhibitor is a compound series one tube long, so it is sized and vehicle-matched by
+ * exactly the same rules as the top tube of a series.
+ */
+function inhibitorAsBlock(inh: Inhibitor): CompoundBlock {
+  return {
+    id: inh.id,
+    name: inh.name || 'inhibitor',
+    colour: inh.colour,
+    volForWells_ul: 0,
+    dilutionFactorOverride: null,
+    stockConc_uM: inh.stockConc_uM,
+    vehicle: inh.vehicle,
+    extraVolume_ul: inh.extraVolume_ul,
+    excludeFromVehicleMatch: false,
+    logM: inh.conc_uM > 0 ? [Math.log10(inh.conc_uM) - 6] : [],
+    stockBsaPct: inh.stockBsaPct,
+    notes: inh.notes,
+  };
+}
+
+function inhibitorForWells(exp: DilutionExperiment, step: InhibitorStep, inh: Inhibitor) {
+  const { wells, painted } = inhibitorWells(exp, `inh:${inh.id}`, inh.wells);
+  return { wells, painted, forWells_ul: wells * inhibitorPerWell(step) };
+}
+
+/** The DMSO the inhibitors need: the worst DMSO stock among them, at its own fold. */
+export function computeInhibitorDmsoTarget(exp: DilutionExperiment): number {
+  const step = inhibitorsInWell(exp);
+  if (!step) return 0;
+  return step.items.reduce((max, inh) => {
+    const { forWells_ul } = inhibitorForWells(exp, step, inh);
+    return Math.max(max, dmsoLoadOf(inhibitorAsBlock(inh), inhibitorFold(exp, inh), [forWells_ul]));
+  }, 0);
 }
 
 /** The rows a block actually uses: leading non-empty entries, in order. */
@@ -572,7 +773,7 @@ function computeBlock(
         warn(
           'warn',
           'dmso-off-target',
-          `DMSO in this block reaches ${(rows[0].dmsoFraction * 100).toFixed(3)} % against a ${(blockTarget * 100).toFixed(3)} % target — it cannot be matched exactly.`,
+          `DMSO in this block reaches ${fmtDmsoPct(rows[0].dmsoFraction)} against a ${fmtDmsoPct(blockTarget)} target — it cannot be matched exactly.`,
         );
       }
     }
@@ -599,7 +800,7 @@ function computeBlock(
 export function bufferName(diluent: string, bsaFrac: number, dmsoFrac: number): string {
   const parts: string[] = [];
   if (bsaFrac > 0) parts.push(`${round(bsaFrac * 100, 4)} % BSA`);
-  if (dmsoFrac > 0) parts.push(`${round(dmsoFrac * 100, 4)} % DMSO`);
+  if (dmsoFrac > 0) parts.push(`${fmtDmsoPct(dmsoFrac)} DMSO`);
   return parts.length > 0 ? `${diluent} + ${parts.join(' + ')}` : `plain ${diluent}`;
 }
 
@@ -756,7 +957,7 @@ function wellBufferVolume(exp: DilutionExperiment): number {
     return Math.max(0, exp.wells) * assayBuffer_ul + extra;
   }
   if (compound_ul <= 0) return extra;
-  const perStep = assayBuffer_ul / compound_ul;
+  const perStep = assayBuffer_ul / perWellPrepared(exp);
   const forCompoundWells = exp.blocks.reduce((total, b) => {
     const used = b.logM.map((v, i) => ({ v, i })).filter((x) => x.v !== null && Number.isFinite(x.v));
     return total + used.reduce((a, x) => a + (stepVolume(exp, b, x.i) + Math.max(0, b.extraVolume_ul)) * perStep, 0);
@@ -766,25 +967,103 @@ function wellBufferVolume(exp: DilutionExperiment): number {
 
 /**
  * How many wells the compound series covers. Nobody types a well count: each row prepares
- * `volForWells` µl, and every well takes `compound_ul` of it, so the number falls out.
+ * `volForWells` µl, and every well takes `compound_ul` of it (or a compound-plate well's
+ * worth), so the number falls out.
  */
 export function wellsCovered(exp: DilutionExperiment): number {
-  const { compound_ul } = exp.addition;
-  if (compound_ul <= 0) return 0;
+  if (exp.addition.compound_ul <= 0) return 0;
+  const perWell = perWellPrepared(exp);
   return exp.blocks.reduce((total, b) => {
     const used = b.logM.map((v, i) => ({ v, i })).filter((x) => x.v !== null && Number.isFinite(x.v));
-    return total + used.reduce((a, x) => a + stepVolume(exp, b, x.i) / compound_ul, 0);
+    return total + used.reduce((a, x) => a + stepVolume(exp, b, x.i) / perWell, 0);
   }, 0);
 }
 
 export function computeDilutions(exp: DilutionExperiment): DilutionResult {
   const assay = ASSAY_PROFILES[exp.assayType];
   const factor = additionFactor(exp);
-  const computedTarget = computeDmsoTarget(exp);
+  const inhStep = inhibitorsInWell(exp);
+  const inhComputed = computeInhibitorDmsoTarget(exp);
+  /*
+   * With DMSO only in the additions, the inhibitors and the compounds are matched separately:
+   * each addition carries just what its own worst stock needs, which keeps the well as low as
+   * it can go. With DMSO in every buffer there is only one level the whole well can sit at,
+   * so both share it.
+   */
+  const sharedDmso = dmsoPlacementOf(exp) === 'all-buffers';
+  const computedTarget = sharedDmso ? Math.max(computeDmsoTarget(exp), inhComputed) : computeDmsoTarget(exp);
   const target = exp.dmsoOverride ?? computedTarget;
+  const inhTarget = inhStep ? (sharedDmso ? target : inhComputed) : 0;
   const bsaFrac = bsaBufferFraction(exp);
   const blocks = exp.blocks.map((b) => computeBlock(b, blockFactor(exp, b), target, bsaFrac, stepVolumesOf(exp, b)));
   const warnings: Warning[] = [];
+
+  let inhibitors: InhibitorResult | null = null;
+  const inhibitorWarnings: Warning[] = [];
+  if (inhStep) {
+    const perWell = inhibitorPerWell(inhStep);
+    let normal = 0;
+    let dmso = 0;
+    const items: InhibitorItemResult[] = inhStep.items.map((inh) => {
+      const fold = inhibitorFold(exp, inh);
+      const { wells, painted, forWells_ul } = inhibitorForWells(exp, inhStep, inh);
+      const b = computeBlock(inhibitorAsBlock(inh), fold, inhTarget, bsaFrac, [forWells_ul]);
+      normal += b.totalNormalBuffer_ul;
+      dmso += b.totalDmsoBuffer_ul;
+      const itemWarnings = [...b.warnings];
+      const scope = inh.name || 'inhibitor';
+      if (inh.conc_uM <= 0) {
+        itemWarnings.push({ level: 'error', code: 'inhibitor-no-conc', scope, message: 'Set the concentration this inhibitor should reach in the well.' });
+      } else if (wells <= 0) {
+        itemWarnings.push({ level: 'warn', code: 'inhibitor-no-wells', scope, message: 'No wells: paint it on the plate, or type how many wells it goes into.' });
+      }
+      if (inh.foldOverride !== null && inh.foldOverride <= 1) {
+        itemWarnings.push({ level: 'error', code: 'inhibitor-bad-fold', scope, message: `A ×${inh.foldOverride} solution is not concentrated at all — it has to be stronger than the well it goes into.` });
+      }
+      return {
+        id: inh.id,
+        name: inh.name,
+        fold,
+        tubeConc_uM: inh.conc_uM * fold,
+        wells,
+        painted,
+        forWells_ul,
+        tube: b.rows[0] ?? null,
+        warnings: itemWarnings,
+      };
+    });
+    inhibitorWarnings.push(...items.flatMap((i) => i.warnings));
+
+    const vehicleCount = inhibitorWells(exp, INHIBITOR_VEHICLE_PAINT, inhStep.vehicleWells);
+    const vehicleRequired = vehicleCount.wells * perWell + Math.max(0, inhStep.vehicleExtra_ul);
+    const shares = inhTarget > 0 && Math.abs(inhTarget - target) < 1e-12;
+    const matched = inhTarget > 0;
+    if (matched) dmso += vehicleRequired;
+    else normal += vehicleRequired;
+
+    const total = wellTotal(exp);
+    const beforeCompounds = total - exp.addition.compound_ul;
+    inhibitors = {
+      defaultFold: defaultInhibitorFold(exp),
+      perWell_ul: perWell,
+      items,
+      vehicle: {
+        wells: vehicleCount.wells,
+        painted: vehicleCount.painted,
+        required_ul: vehicleRequired,
+        diluent: matched ? (shares ? 'dmso' : 'inhibitor-dmso') : 'normal',
+        matched,
+      },
+      computedTarget: inhComputed,
+      target: inhTarget,
+      sharesCompoundDiluent: shares,
+      inWellDmsoBeforeCompounds: sharedDmso
+        ? target
+        : beforeCompounds > 0 ? (inhTarget * inhStep.volumePerWell_ul) / beforeCompounds : 0,
+      totalNormalBuffer_ul: normal,
+      totalDmsoBuffer_ul: dmso,
+    };
+  }
 
   if (exp.dmsoOverride !== null && exp.dmsoOverride < computedTarget - 1e-12) {
     const worst = exp.blocks
@@ -794,7 +1073,7 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
       level: 'warn',
       code: 'override-below-computed',
       scope: 'DMSO matching',
-      message: `The override (${(exp.dmsoOverride * 100).toFixed(3)} %) is below the ${(computedTarget * 100).toFixed(3)} % that ${worst?.name || 'a DMSO stock'} already brings in — that compound cannot be matched down to it.`,
+      message: `The override (${fmtDmsoPct(exp.dmsoOverride)}) is below the ${fmtDmsoPct(computedTarget)} that ${worst?.name || 'a DMSO stock'} already brings in — that compound cannot be matched down to it.`,
     });
   }
 
@@ -824,7 +1103,15 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
       message: `"Added differently" is set to ${b.dilutionFactorOverride}× in this compound's panel (second field, under the volume for wells) — a dilution cannot be zero or negative. Clear that field to use the experiment's addition.`,
     });
   }
-  const inWellDmso = inWellFraction(target, exp.dmsoPlacement, factor);
+  /*
+   * With DMSO only in the additions, the well collects it from both: the compound's share of
+   * the volume, and the inhibitor's. Every well receives an inhibitor or its vehicle, so the
+   * sum is the same everywhere.
+   */
+  const inhShare = inhStep ? inhStep.volumePerWell_ul / wellTotal(exp) : 0;
+  const inWellDmso = sharedDmso
+    ? inWellFraction(target, dmsoPlacementOf(exp), factor)
+    : inWellFraction(target, dmsoPlacementOf(exp), factor) + inhTarget * inhShare;
   if (inWellDmso > DMSO_IN_WELL_CONCERN) {
     const worst = exp.blocks
       .map((b) => ({ b, load: dmsoLoadOf(b, blockFactor(exp, b), stepVolumesOf(exp, b)) }))
@@ -833,7 +1120,7 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
       level: 'warn',
       code: 'dmso-in-well-high',
       scope: 'DMSO matching',
-      message: `The wells would end at ${round(inWellDmso * 100, 3)} % DMSO — most cells are kept under ${round(DMSO_IN_WELL_CONCERN * 100, 1)} %, and often under 0.1 %. ${worst?.b.name || 'A DMSO stock'} sets it: its top dose is ${round(logMToUM(usedRows(worst.b)[0] ?? 0), 4)} µM out of a ${worst?.b.stockConc_uM} µM stock${exp.dmsoPlacement === 'all-buffers' ? `, and every buffer carries that DMSO` : ''}. Volumes will not help — the well sees the top dose divided by the stock — so it takes a more concentrated stock or a lower top dose.`,
+      message: `The wells would end at ${fmtDmsoPct(inWellDmso)} DMSO — most cells are kept under ${round(DMSO_IN_WELL_CONCERN * 100, 1)} %, and often under 0.1 %. ${worst?.b.name || 'A DMSO stock'} sets it: its top dose is ${round(logMToUM(usedRows(worst.b)[0] ?? 0), 4)} µM out of a ${worst?.b.stockConc_uM} µM stock${dmsoPlacementOf(exp) === 'all-buffers' ? `, and every buffer carries that DMSO` : ''}. Volumes will not help — the well sees the top dose divided by the stock — so it takes a more concentrated stock or a lower top dose.`,
     });
   }
 
@@ -862,8 +1149,14 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
   const channelsInDmso = channels.reduce((a, c) => a + (c.matched ? c.required_ul : 0), 0);
   const channelsPlain = channels.reduce((a, c) => a + (c.matched ? 0 : c.required_ul), 0);
 
-  const totalNormalBuffer_ul = blocks.reduce((a, b) => a + b.totalNormalBuffer_ul, 0) + channelsPlain;
-  const totalDmsoBuffer_ul = blocks.reduce((a, b) => a + b.totalDmsoBuffer_ul, 0) + channelsInDmso;
+  // The inhibitors' DMSO-free make-up is the same diluent as the compounds'; their DMSO
+  // diluent is too only when both sit at the same %.
+  const inhNormal = inhibitors?.totalNormalBuffer_ul ?? 0;
+  const inhDmso = inhibitors?.totalDmsoBuffer_ul ?? 0;
+  const inhSeparate = inhibitors !== null && !inhibitors.sharesCompoundDiluent && inhDmso > 0;
+  const totalNormalBuffer_ul = blocks.reduce((a, b) => a + b.totalNormalBuffer_ul, 0) + channelsPlain + inhNormal;
+  const totalDmsoBuffer_ul =
+    blocks.reduce((a, b) => a + b.totalDmsoBuffer_ul, 0) + channelsInDmso + (inhSeparate ? 0 : inhDmso);
 
   if (exp.bsa.enabled) {
     if (exp.bsa.stockPct <= 0) {
@@ -880,9 +1173,9 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
 
   const bsaStockPct = exp.bsa.enabled ? exp.bsa.stockPct : 0;
   const wellBsa = exp.bsa.placement === 'all-buffers' ? bsaFrac : 0;
-  const wellDmso = exp.dmsoPlacement === 'all-buffers' ? target : 0;
+  const wellDmso = dmsoPlacementOf(exp) === 'all-buffers' ? target : 0;
 
-  const ov = exp.premixOverrides ?? { 'assay-buffer': null, normal: null, dmso: null, well: null, substrate: null };
+  const ov = exp.premixOverrides ?? {};
   const storedSubstrate = exp.substrate ?? defaultSubstrate(exp.assayType);
   const substrateSettings = substrateInWell(exp) ?? { ...storedSubstrate, enabled: false };
 
@@ -918,9 +1211,22 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
   });
 
   const downstream = [
-    recipe({ ...common, id: 'normal', name: `For the compounds — ${bufferName(assay.diluent, bsaFrac, 0)}`, required: totalNormalBuffer_ul, needDmso: 0, needBsa: bsaFrac, override: ov.normal }),
-    recipe({ ...common, id: 'dmso', name: `For the compounds — ${bufferName(assay.diluent, bsaFrac, target)}`, required: totalDmsoBuffer_ul, needDmso: target, needBsa: bsaFrac, override: ov.dmso }),
-    recipe({ ...common, id: 'well', name: 'For the wells (before compounds)', required: wellBufferVolume(exp), needDmso: wellDmso, needBsa: wellBsa, override: ov.well }),
+    recipe({ ...common, id: 'normal', name: `For the ${inhibitors ? 'inhibitors and compounds' : 'compounds'} — ${bufferName(assay.diluent, bsaFrac, 0)}`, required: totalNormalBuffer_ul, needDmso: 0, needBsa: bsaFrac, override: ov.normal ?? null }),
+    recipe({ ...common, id: 'dmso', name: `For the ${inhibitors && !inhSeparate && inhDmso > 0 ? 'inhibitors and compounds' : 'compounds'} — ${bufferName(assay.diluent, bsaFrac, target)}`, required: totalDmsoBuffer_ul, needDmso: target, needBsa: bsaFrac, override: ov.dmso ?? null }),
+    ...(inhSeparate
+      ? [
+          recipe({
+            ...common,
+            id: 'inhibitor-dmso',
+            name: `For the inhibitors and their vehicle — ${bufferName(assay.diluent, bsaFrac, inhTarget)}`,
+            required: inhDmso,
+            needDmso: inhTarget,
+            needBsa: bsaFrac,
+            override: ov['inhibitor-dmso'] ?? null,
+          }),
+        ]
+      : []),
+    recipe({ ...common, id: 'well', name: assay.wellBufferName ?? `For the wells (before ${inhibitors ? 'inhibitors' : 'compounds'})`, required: wellBufferVolume(exp), needDmso: wellDmso, needBsa: wellBsa, override: ov.well ?? null }),
     ...(substrateSettings.enabled
       ? [
           recipe({
@@ -1002,7 +1308,7 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
         level: 'info',
         code: 'carrier-left-short',
         scope: 'Premix',
-        message: `${r.name}: the stocks added leave ${short.name} at ${round(short.achieved * 100, 5)} % rather than ${round(short.target * 100, 5)} % — ${round((1 - short.achieved / short.target) * 100, 1)} % low, which is inside pipetting error, so it is left as is.`,
+        message: `${r.name}: the stocks added leave ${short.name} a hair under its ${short.name === 'DMSO' ? fmtDmsoPct(short.target) : `${round(short.target * 100, 4)} %`} target — ${round((1 - short.achieved / short.target) * 100, 1)} % low, which is inside pipetting error, so it is left as is.`,
       });
     }
     if (!r.overridden) continue;
@@ -1032,9 +1338,13 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
     computedTarget,
     target,
     additionFactor: factor,
-    inWellDmso: inWellFraction(target, exp.dmsoPlacement, factor),
+    inWellDmso,
     bsaBufferFraction: bsaFrac,
-    bsaInWell: inWellFraction(bsaFrac, exp.bsa.placement, factor),
+    // Inhibitor solutions are made up in the BSA diluents too, so they bring their share.
+    bsaInWell:
+      exp.bsa.placement === 'all-buffers'
+        ? inWellFraction(bsaFrac, exp.bsa.placement, factor)
+        : inWellFraction(bsaFrac, exp.bsa.placement, factor) + bsaFrac * inhShare,
     blocks,
     totalNormalBuffer_ul,
     totalDmsoBuffer_ul,
@@ -1048,7 +1358,7 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
       exp.wells !== null && exp.wells !== undefined ? Math.max(0, exp.wells) : wellsCovered(exp),
     bufferUse: {
       wells_ul: recipes.find((r) => r.id === 'well')?.base_ul ?? 0,
-      compounds_ul: ['normal', 'dmso'].reduce(
+      compounds_ul: ['normal', 'dmso', 'inhibitor-dmso'].reduce(
         (a, id) => a + (recipes.find((r) => r.id === id)?.base_ul ?? 0),
         0,
       ),
@@ -1056,10 +1366,12 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
       substrate_ul: recipes.find((r) => r.id === 'substrate')?.base_ul ?? 0,
     },
     bufferChannels: channels,
+    inhibitors,
     fluorescein,
     tb,
     warnings: [
       ...warnings,
+      ...inhibitorWarnings,
       ...substrate.warnings,
       ...fluorescein.warnings,
       ...tb.warnings,

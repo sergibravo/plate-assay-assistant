@@ -141,7 +141,7 @@ const cid = () => `sub_${(seq += 1)}_${Math.random().toString(36).slice(2, 7)}`;
  * Per-assay starting points, from how this lab runs them. Applied on request, never
  * silently over the top of someone's numbers.
  */
-export function defaultSubstrate(assay: 'NanoBiT/BRET' | 'HiBiT' | 'DERET'): SubstrateSettings {
+export function defaultSubstrate(assay: 'NanoBiT/BRET' | 'HiBiT' | 'DERET' | 'DMR'): SubstrateSettings {
   const base = { enabled: true, wells: 96, extraVolume_ul: 200, notes: '' };
   switch (assay) {
     case 'HiBiT':
@@ -158,6 +158,9 @@ export function defaultSubstrate(assay: 'NanoBiT/BRET' | 'HiBiT' | 'DERET'): Sub
       };
     case 'DERET':
       // Furimazine is the diluent for the compounds themselves; not calculated yet.
+      return { ...base, enabled: false, volumePerWell_ul: 10, reference: 'after-compounds', components: [] };
+    case 'DMR':
+      // Label-free: nothing to add.
       return { ...base, enabled: false, volumePerWell_ul: 10, reference: 'after-compounds', components: [] };
     default:
       return {

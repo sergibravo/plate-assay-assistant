@@ -17,6 +17,7 @@ import {
 } from '../calc/layout';
 import { diagonalSplit, inkOn, tint } from '../calc/palette';
 import { PLATE_GEOMETRY } from '../calc/types';
+import { fmtUl } from '../calc/units';
 import { exportLayoutXlsx } from '../export/layoutsheet';
 import type { Project } from '../state/project';
 import { Panel, Warnings } from './components';
@@ -124,6 +125,11 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
         ...project.dilutions,
         blocks: project.dilutions.blocks.map((b) => (b.id === blockId ? { ...b, colour } : b)),
         bufferChannels: project.dilutions.bufferChannels.map((c) => (c.id === blockId ? { ...c, colour } : c)),
+        inhibitors: project.dilutions.inhibitors && {
+          ...project.dilutions.inhibitors,
+          items: project.dilutions.inhibitors.items.map((i) => (i.id === blockId ? { ...i, colour } : i)),
+          vehicleColour: blockId === 'vehicle' ? colour : project.dilutions.inhibitors.vehicleColour,
+        },
       },
     });
 
@@ -148,6 +154,9 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
     }
     const channels = treatments.filter((p) => p.kind === 'channel');
     for (const c of channels) groups.push({ key: c.id.slice(4), name: c.label, colour: c.colour, paints: [c] });
+    // `inh:<id>` and `inh:vehicle` — the key after the prefix is what the colour picker edits.
+    const inhibitors = treatments.filter((p) => p.kind === 'inhibitor');
+    for (const c of inhibitors) groups.push({ key: c.id.slice(4), name: c.label, colour: c.colour, paints: [c] });
     return groups;
   }, [project.dilutions.blocks, treatments]);
 
@@ -165,8 +174,11 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
 
   return (
     <>
-      <Warnings items={warnings} />
-
+      {/*
+        The plate's own messages live below it, not up here: they change with every well
+        painted, and anything above the plate that grows or shrinks moves it under the pointer
+        mid-drag — the next well you meant to miss is the one you hit.
+      */}
       <Panel title="Paints">
         <div className="grid-2">
           <div>
@@ -222,6 +234,14 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
           </button>
         }
       >
+        {project.dilutions.compoundPlate_ul ? (
+          <p className="hint" style={{ marginTop: 0 }}>
+            <strong>Compound plate: a {layout.format} plate laid out exactly like this one.</strong>{' '}
+            Each of its wells holds {fmtUl(project.dilutions.compoundPlate_ul)} µl, and{' '}
+            {fmtUl(project.dilutions.addition.compound_ul)} µl of it goes onto the cells below
+            {project.dilutions.inhibitors?.enabled ? '; the inhibitors are pipetted by hand, straight onto the cells' : ''}.
+          </p>
+        ) : null}
         <div className="grid-scroll">
           <table className="plate">
             <thead>
@@ -255,15 +275,17 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
                         onMouseOver={() => { if (dragging.current) applyTo([w.id]); }}
                         onContextMenu={(e) => { e.preventDefault(); liftTopTreatment(w.id); }}
                       >
-                        {paints.map((p, i) => (
-                          <span
-                            key={p.id}
-                            className={`well-label part-${i === 0 ? 'first' : 'rest'}`}
-                            style={{ color: inkOn(fills[i]) }}
-                          >
-                            {p.short}
-                          </span>
-                        ))}
+                        <div className="well-labels">
+                          {paints.map((p, i) => (
+                            <span
+                              key={p.id}
+                              className={`well-label part-${i === 0 ? 'first' : 'rest'}`}
+                              style={{ color: inkOn(fills[i]) }}
+                            >
+                              {p.short}
+                            </span>
+                          ))}
+                        </div>
                       </td>
                     );
                   })}
@@ -306,6 +328,7 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
       </Panel>
 
       <Panel title="What the plate says">
+        <Warnings items={warnings} />
         <div className="grid-2">
           <div>
             <div className="field"><label>Wells in use</label><output className="calc">{summary.used}</output><span className="unit">of {summary.total}</span></div>

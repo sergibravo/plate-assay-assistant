@@ -2,18 +2,33 @@ import { useMemo } from 'react';
 import {
   ASSAY_PROFILES,
   computeDilutions,
+  DMR_ADDITION,
+  DMR_COMPOUND_PLATE_UL,
+  dmsoPlacementOf,
+  inhibitorsInWell,
+  perWellPrepared,
   stepVolume,
   substrateInWell,
   type AssayType,
   type CompoundBlock,
+  type Inhibitor,
+  type InhibitorStep,
   type Placement,
 } from '../calc/dilutions';
 import type { Vehicle } from '../calc/types';
-import { fmtUl, logMToUM, NEGLIGIBLE_RELATIVE, round } from '../calc/units';
+import { fmtDmsoPct, fmtUl, logMToUM, NEGLIGIBLE_RELATIVE, round, roundDmsoPct } from '../calc/units';
 import { exportDilutionsXlsx } from '../export/dilutionsheet';
 import { wellsPerTreatment } from '../calc/layout';
 import { defaultSubstrate, newSubstrateComponent, type SubstrateReference } from '../calc/substrate';
-import { dilutionsWithPlate, emptyDilutions, newBufferChannel, newCompoundBlock, type Project } from '../state/project';
+import {
+  defaultInhibitorStep,
+  dilutionsWithPlate,
+  emptyDilutions,
+  newBufferChannel,
+  newCompoundBlock,
+  newInhibitor,
+  type Project,
+} from '../state/project';
 import { CalcField, ConfirmButton, Legend, NumField, Panel, Segmented, Warnings } from './components';
 
 const ASSAY_TYPES = Object.keys(ASSAY_PROFILES) as AssayType[];
@@ -48,8 +63,36 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
   const wellSubstrate = substrateInWell(exp);
   const fluo = exp.fluorescein;
   const tb = exp.tb;
+  const inh: InhibitorStep = exp.inhibitors ?? defaultInhibitorStep();
+  /** The inhibitor step as the well sees it — `null` when it is off. */
+  const wellInhibitor = inhibitorsInWell(exp);
   const wellVolume =
-    exp.addition.assayBuffer_ul + (wellSubstrate?.volumePerWell_ul ?? 0) + exp.addition.compound_ul;
+    exp.addition.assayBuffer_ul +
+    (wellSubstrate?.volumePerWell_ul ?? 0) +
+    (wellInhibitor?.volumePerWell_ul ?? 0) +
+    exp.addition.compound_ul;
+  const setInh = (patch: Partial<InhibitorStep>) => setExp({ inhibitors: { ...inh, ...patch } });
+  const setInhibitor = (id: string, patch: Partial<Inhibitor>) =>
+    setInh({ items: inh.items.map((i) => (i.id === id ? { ...i, ...patch } : i)) });
+  /*
+   * Switching the step on takes the inhibitor's volume out of the buffer already in the well,
+   * and switching it off gives it back, so the well volume — and the compound's fold — stay
+   * put: 30 + 10 becomes 20 + 10 + 10.
+   */
+  const toggleInhibitors = (enabled: boolean) => {
+    const v = inh.volumePerWell_ul;
+    const buffer = exp.addition.assayBuffer_ul;
+    const assayBuffer_ul = enabled ? (buffer >= v ? buffer - v : buffer) : buffer + v;
+    setExp({ inhibitors: { ...inh, enabled }, addition: { ...exp.addition, assayBuffer_ul } });
+  };
+  const dmrDefaults = {
+    addition: { ...DMR_ADDITION, assayBuffer_ul: DMR_ADDITION.assayBuffer_ul - (wellInhibitor?.volumePerWell_ul ?? 0) },
+    compoundPlate_ul: DMR_COMPOUND_PLATE_UL,
+  };
+  const onDmrDefaults =
+    exp.addition.assayBuffer_ul === dmrDefaults.addition.assayBuffer_ul &&
+    exp.addition.compound_ul === dmrDefaults.addition.compound_ul &&
+    exp.compoundPlate_ul === dmrDefaults.compoundPlate_ul;
   const setSub = (patch: Partial<typeof sub>) => setExp({ substrate: { ...sub, ...patch } });
   const setChannel = (id: string, patch: Partial<(typeof exp.bufferChannels)[number]>) =>
     setExp({ bufferChannels: exp.bufferChannels.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
@@ -74,7 +117,6 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
     setBlock(block.id, { logM: block.logM.map((_, i) => round(top - i * step, 6)) });
   };
 
-  const pct = (x: number) => `${round(x * 100, 4)} %`;
   /** Things that actually need making up. Plain buffer comes out of the bottle, so it is not one. */
   const toPrepare = result.recipes.filter((r) => !r.isPlainDraw && !r.isPlainBuffer && r.required_ul > 0);
   /** Portions of a prepared batch that need nothing added — allocations, not preparations. */
@@ -104,6 +146,17 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
             {note}
           </div>
         ))}
+        {exp.assayType === 'DMR' && !onDmrDefaults && (
+          <div className="no-print" style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+            <button className="btn small" onClick={() => setExp(dmrDefaults)}>
+              Use DMR volumes
+            </button>
+            <span className="hint" style={{ margin: 0 }}>
+              {dmrDefaults.addition.assayBuffer_ul} µl buffer{wellInhibitor ? ` + ${wellInhibitor.volumePerWell_ul} µl inhibitor` : ''} + {DMR_ADDITION.compound_ul} µl
+              compound, from a compound plate holding {DMR_COMPOUND_PLATE_UL} µl a well.
+            </span>
+          </div>
+        )}
       </Panel>
 
       <Panel title="Adding compound to the well">
@@ -124,12 +177,31 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                 onChange={(v) => setSub({ volumePerWell_ul: v })}
               />
             )}
+            {wellInhibitor && (
+              <NumField
+                label="Inhibitor added"
+                unit="µl per well"
+                value={wellInhibitor.volumePerWell_ul}
+                onChange={(v) => setInh({ volumePerWell_ul: v })}
+              />
+            )}
             <NumField
               label="Compound solution added"
               unit="µl per well"
               value={exp.addition.compound_ul}
               onChange={(v) => setExp({ addition: { ...exp.addition, compound_ul: v } })}
             />
+            <div className="field">
+              <label>From a compound plate<em className="sub"> (optional)</em></label>
+              <input
+                type="number"
+                step="any"
+                placeholder="no — from the tubes"
+                value={exp.compoundPlate_ul ?? ''}
+                onChange={(e) => setExp({ compoundPlate_ul: e.target.value === '' ? null : Number(e.target.value) })}
+              />
+              <span className="unit">µl per well</span>
+            </div>
             <CalcField label="= well volume" unit="µl" value={wellVolume} />
             <CalcField label="= compound diluted by" unit="×" value={result.additionFactor} decimals={3} strong />
             <CalcField label="= wells the series covers" unit="wells" value={result.wellsCovered} decimals={1} />
@@ -157,10 +229,26 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
               be 0: 50 µl of compound into an empty well is a legal 1× addition.
               Each tube is prepared at {round(result.additionFactor, 3)}× the concentration you
               type, so the logM in the tables below is what the <strong>cells</strong> finally see.
+              {exp.compoundPlate_ul ? (
+                <>
+                  {' '}The compound plate is a {project.layout.format} plate laid out like the cell plate,
+                  holding {fmtUl(exp.compoundPlate_ul)} µl in each well, so every painted well is
+                  prepared at that, of which{' '}
+                  {fmtUl(exp.addition.compound_ul)} µl reaches the cells.
+                </>
+              ) : null}
             </p>
           </div>
           <div>
             <h3>Where the DMSO sits</h3>
+            {result.assay.dmsoEverywhere ? (
+              <p className="hint" style={{ marginTop: 0 }}>
+                <strong>In everything, at one %.</strong> In {exp.assayType} the wash buffer left on
+                the cells, the inhibitors and their vehicle, and the compounds all carry the same DMSO —
+                the highest any of them needs — so the cells never see it change.
+              </p>
+            ) : (
+            <>
             <Segmented
               value={exp.dmsoPlacement}
               options={[
@@ -178,6 +266,8 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
               tubes, so the concentration never changes — steadier for the cells, but the final
               DMSO is {round(result.additionFactor, 3)}× higher.
             </p>
+            </>
+            )}
           </div>
         </div>
         <Legend />
@@ -193,7 +283,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
             <CalcField
               label="Needed by the worst DMSO stock"
               unit="% DMSO"
-              value={result.computedTarget * 100}
+              value={roundDmsoPct(result.computedTarget * 100)}
               decimals={4}
             />
             <div className="field">
@@ -209,12 +299,14 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
               />
               <span className="unit">% DMSO</span>
             </div>
-            <CalcField label="Used — DMSO in every tube" unit="% DMSO" value={result.target * 100} decimals={4} strong />
-            <CalcField label="→ DMSO in the well" unit="% DMSO" value={result.inWellDmso * 100} decimals={4} strong />
+            <CalcField label="Used — DMSO in every tube" unit="% DMSO" value={roundDmsoPct(result.target * 100)} decimals={4} strong />
+            <CalcField label="→ DMSO in the well" unit="% DMSO" value={roundDmsoPct(result.inWellDmso * 100)} decimals={4} strong />
             <p className="hint">
-              {exp.dmsoPlacement === 'all-buffers'
-                ? 'Every buffer carries the same DMSO, so the well is at that % from the start and nothing changes when the compound goes in.'
-                : `Only the compound tubes carry DMSO, so the well lands ${round(result.additionFactor, 3)}× lower — the cells meet DMSO for the first time when the compound is added.`}
+              {dmsoPlacementOf(exp) === 'all-buffers'
+                ? `Every buffer carries the same DMSO${result.inhibitors ? ' — the inhibitors and their vehicle too' : ''}, so the well is at that % from the start and nothing changes when anything goes in.`
+                : result.inhibitors
+                  ? `Only the additions carry DMSO: the compound brings its ${fmtDmsoPct(result.target)} diluted ${round(result.additionFactor, 3)}×, and the inhibitor (or its vehicle) its own ${fmtDmsoPct(result.inhibitors.target)} — the figure above is the two together.`
+                  : `Only the compound tubes carry DMSO, so the well lands ${round(result.additionFactor, 3)}× lower — the cells meet DMSO for the first time when the compound is added.`}
             </p>
           </div>
           <div>
@@ -226,8 +318,8 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
             <p className="hint">
               {result.target > 0 ? (
                 <>
-                  The DMSO diluent is {result.assay.diluent} premixed at {pct(result.target)} DMSO. Every
-                  compound well then lands at {pct(result.inWellDmso)} DMSO, whatever its stock was
+                  The DMSO diluent is {result.assay.diluent} premixed at {fmtDmsoPct(result.target)} DMSO. Every
+                  compound well then lands at {fmtDmsoPct(result.inWellDmso)} DMSO, whatever its stock was
                   dissolved in.
                 </>
               ) : (
@@ -397,7 +489,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
           </div>
         </Panel>
       )}
-      {exp.assayType !== 'DERET' && (
+      {exp.assayType !== 'DERET' && exp.assayType !== 'DMR' && (
       <Panel
         title="Substrate"
         actions={
@@ -515,6 +607,174 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
       </Panel>
       )}
 
+      <Panel
+        title="Inhibitors — added before the compounds"
+        actions={
+          <div className="no-print field" style={{ margin: 0, gridTemplateColumns: 'auto auto' }}>
+            <label style={{ fontSize: 11.5, color: '#667085' }}>use inhibitors</label>
+            <input type="checkbox" checked={inh.enabled} onChange={(e) => toggleInhibitors(e.target.checked)} style={{ width: 16 }} />
+          </div>
+        }
+      >
+        {result.inhibitors && wellInhibitor ? (
+          <>
+            <div className="grid-2">
+              <div>
+                <NumField label="Inhibitor added" unit="µl per well" value={inh.volumePerWell_ul} onChange={(v) => setInh({ volumePerWell_ul: v })} />
+                <CalcField label="= made at, unless set below" unit="×" value={result.inhibitors.defaultFold} decimals={3} strong />
+                <div className="field">
+                  <label>Prepare per well</label>
+                  <input
+                    type="number"
+                    step="any"
+                    placeholder={`${fmtUl(inh.volumePerWell_ul)} (what is added)`}
+                    title="Pipetted by hand, so a well needs just what is added — raise it to keep some in hand"
+                    value={inh.preparedPerWell_ul ?? ''}
+                    onChange={(e) => setInh({ preparedPerWell_ul: e.target.value === '' ? null : Number(e.target.value) })}
+                  />
+                  <span className="unit">µl</span>
+                </div>
+                <p className="hint">
+                  Every well gets one inhibitor or the matched vehicle, so the well is{' '}
+                  {fmtUl(exp.addition.assayBuffer_ul)} µl buffer + {fmtUl(inh.volumePerWell_ul)} µl
+                  inhibitor + {fmtUl(exp.addition.compound_ul)} µl compound. Concentrations are what
+                  the cells sit in <strong>before</strong> the compounds go in; each solution is made
+                  at {round(result.inhibitors.defaultFold, 3)}× that unless its own row says otherwise.
+                  {' '}They are pipetted by hand, so each well is prepared at{' '}
+                  {fmtUl(result.inhibitors.perWell_ul)} µl — raise “prepare per well” to keep some in
+                  hand, or add an extra per inhibitor.
+                </p>
+              </div>
+              <div>
+                <h3>Matched vehicle <span className="sub">for the wells without an inhibitor</span></h3>
+                <div className="field">
+                  <label>Wells</label>
+                  {result.inhibitors.vehicle.painted ? (
+                    <span className="calc num" style={{ textAlign: 'right' }} title="painted on the plate">{result.inhibitors.vehicle.wells}</span>
+                  ) : (
+                    <input type="number" step="1" value={inh.vehicleWells} onChange={(e) => setInh({ vehicleWells: Number(e.target.value) })} />
+                  )}
+                  <span className="unit">{result.inhibitors.vehicle.painted ? 'painted' : 'wells'}</span>
+                </div>
+                <NumField label="Extra" unit="µl" value={inh.vehicleExtra_ul} step={10} onChange={(v) => setInh({ vehicleExtra_ul: v })} />
+                <div className="pipette-box">
+                  <CalcField label="Vehicle" unit="µl" value={result.inhibitors.vehicle.required_ul} strong />
+                </div>
+                <CalcField label="DMSO in every inhibitor solution" unit="% DMSO" value={roundDmsoPct(result.inhibitors.target * 100)} decimals={4} />
+                <CalcField label="→ DMSO in the well before compounds" unit="% DMSO" value={roundDmsoPct(result.inhibitors.inWellDmsoBeforeCompounds * 100)} decimals={4} />
+                <p className="hint">
+                  {result.inhibitors.vehicle.matched
+                    ? `The vehicle is the inhibitors' DMSO diluent on its own (${fmtDmsoPct(result.inhibitors.target)}), so every well sees the same DMSO whether or not it got an inhibitor${result.inhibitors.sharesCompoundDiluent ? ' — the same diluent the compounds use, so there is nothing extra to premix.' : '. It is premixed separately from the compounds’ diluent, so each addition carries only the DMSO its own stocks need.'}`
+                    : `No inhibitor uses a DMSO stock, so the vehicle is plain ${result.assay.diluent}.`}
+                </p>
+              </div>
+            </div>
+
+            <table style={{ marginTop: 10 }}>
+              <thead>
+                <tr>
+                  <th>Inhibitor</th>
+                  <th className="num" style={{ width: 90 }}>In well (µM)</th>
+                  <th className="num" style={{ width: 80 }}>Made at (×)</th>
+                  <th className="num">In tube (µM)</th>
+                  <th className="num" style={{ width: 95 }}>Stock (µM)</th>
+                  <th style={{ width: 90 }}>Stock in</th>
+                  {exp.bsa.enabled && <th className="num" style={{ width: 80 }}>Stock BSA (%)</th>}
+                  <th className="num" style={{ width: 70 }}>Wells</th>
+                  <th className="num" style={{ width: 70 }}>Extra (µl)</th>
+                  <th className="num">Prepare (µl)</th>
+                  <th className="num">Stock (µl)</th>
+                  <th className="num">{result.assay.normalBufferName} (µl)</th>
+                  <th className="num">+ DMSO (µl)</th>
+                  <th className="no-print" style={{ width: 36 }} />
+                </tr>
+              </thead>
+              <tbody>
+                {inh.items.map((item) => {
+                  const res = result.inhibitors!.items.find((r) => r.id === item.id);
+                  const tube = res?.tube;
+                  return (
+                    <tr key={item.id}>
+                      <td className="input">
+                        <input style={{ textAlign: 'left', borderLeft: `4px solid ${item.colour}` }} value={item.name} placeholder="name" onChange={(e) => setInhibitor(item.id, { name: e.target.value })} />
+                      </td>
+                      <td className="input">
+                        <input type="number" step="any" value={item.conc_uM} onChange={(e) => setInhibitor(item.id, { conc_uM: Number(e.target.value) })} />
+                      </td>
+                      <td className="input">
+                        <input
+                          type="number"
+                          step="any"
+                          placeholder={String(round(result.inhibitors!.defaultFold, 3))}
+                          value={item.foldOverride ?? ''}
+                          onChange={(e) => setInhibitor(item.id, { foldOverride: e.target.value === '' ? null : Number(e.target.value) })}
+                        />
+                      </td>
+                      <td className="calc num">{res ? round(res.tubeConc_uM, 4) : ''}</td>
+                      <td className="input">
+                        <input type="number" step="any" value={item.stockConc_uM} onChange={(e) => setInhibitor(item.id, { stockConc_uM: Number(e.target.value) })} />
+                      </td>
+                      <td className="input">
+                        <select
+                          value={item.vehicle}
+                          onChange={(e) => setInhibitor(item.id, { vehicle: e.target.value as Vehicle })}
+                          style={{ width: '100%', border: 'none', background: 'transparent', font: 'inherit', padding: '4px 7px' }}
+                        >
+                          {VEHICLES.map((v) => (
+                            <option key={v} value={v}>{v}</option>
+                          ))}
+                        </select>
+                      </td>
+                      {exp.bsa.enabled && (
+                        <td className="input">
+                          <input type="number" step="any" placeholder="none" value={item.stockBsaPct ?? ''} onChange={(e) => setInhibitor(item.id, { stockBsaPct: e.target.value === '' ? null : Number(e.target.value) })} />
+                        </td>
+                      )}
+                      {res?.painted ? (
+                        <td className="num" title="painted on the plate">{res.wells}</td>
+                      ) : (
+                        <td className="input" title="not painted on the plate — type the wells">
+                          <input type="number" step="1" value={item.wells} onChange={(e) => setInhibitor(item.id, { wells: Number(e.target.value) })} />
+                        </td>
+                      )}
+                      <td className="input">
+                        <input type="number" step="any" value={item.extraVolume_ul} onChange={(e) => setInhibitor(item.id, { extraVolume_ul: Number(e.target.value) })} />
+                      </td>
+                      <td className="calc num">{tube ? tube.volToPrepare_ul : ''}</td>
+                      <td className="calc num">{tube ? fmtUl(tube.aliquotIn_ul) : ''}</td>
+                      <td className="calc num">{tube ? fmtUl(tube.normalBuffer_ul) : ''}</td>
+                      <td className="calc num">{tube ? fmtUl(tube.dmsoBuffer_ul) : ''}</td>
+                      <td className="no-print">
+                        <ConfirmButton onConfirm={() => setInh({ items: inh.items.filter((x) => x.id !== item.id) })}>✕</ConfirmButton>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <button
+              className="btn small no-print"
+              style={{ marginTop: 8 }}
+              onClick={() => setInh({ items: [...inh.items, newInhibitor(`Inhibitor ${inh.items.length + 1}`, inh.items.length)] })}
+            >
+              + Inhibitor
+            </button>
+            <p className="hint">
+              Paint each inhibitor and the vehicle on the plate in module 2 and the wells fill in
+              by themselves; until then, type them. “+ DMSO” is the inhibitors' DMSO diluent
+              {result.inhibitors.target > 0 ? ` at ${fmtDmsoPct(result.inhibitors.target)}` : ''} — see the premix recipe.
+            </p>
+          </>
+        ) : (
+          <p className="hint">
+            No inhibitors in this run. Switch them on when some wells get an inhibitor (and the rest
+            its DMSO-matched vehicle) before the compounds: the {fmtUl(inh.volumePerWell_ul)} µl comes out of
+            the buffer in the well, so {fmtUl(exp.addition.assayBuffer_ul)} + {fmtUl(exp.addition.compound_ul)} becomes{' '}
+            {fmtUl(Math.max(0, exp.addition.assayBuffer_ul - inh.volumePerWell_ul))} + {fmtUl(inh.volumePerWell_ul)} + {fmtUl(exp.addition.compound_ul)} µl.
+          </p>
+        )}
+      </Panel>
+
       <Panel title="BSA carrier & premix recipe">
         <div className="grid-2">
           <div>
@@ -589,11 +849,15 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                         <em className="sub" style={{ display: 'block' }}>
                           from {r.baseName}
                           {(() => {
-                            const inThis = result.bufferChannels.filter(
-                              (c) => c.required_ul > 0 && (c.matched ? 'dmso' : 'normal') === r.id,
-                            );
+                            const inThis = result.bufferChannels
+                              .filter((c) => c.required_ul > 0 && (c.matched ? 'dmso' : 'normal') === r.id)
+                              .map((c) => ({ name: c.name || 'buffer channel', required_ul: c.required_ul }));
+                            const vehicle = result.inhibitors?.vehicle;
+                            if (vehicle && vehicle.required_ul > 0 && vehicle.diluent === r.id) {
+                              inThis.push({ name: 'inhibitor vehicle', required_ul: vehicle.required_ul });
+                            }
                             return inThis.length > 0
-                              ? ` · includes ${inThis.map((c) => `${fmtUl(c.required_ul)} µl ${c.name || 'buffer channel'}`).join(', ')}`
+                              ? ` · includes ${inThis.map((c) => `${fmtUl(c.required_ul)} µl ${c.name}`).join(', ')}`
                               : '';
                           })()}
                         </em>
@@ -730,7 +994,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                   return (
                     <p className="hint">
                       <strong>The plate sizes {painted} of {used} step{used === 1 ? '' : 's'} here.</strong>{' '}
-                      Wells painted × {fmtUl(exp.addition.compound_ul)} µl a well = the “for wells”
+                      Wells painted × {fmtUl(perWellPrepared(exp))} µl a well = the “for wells”
                       column below; the figure above covers any step the plate does not mention.
                     </p>
                   );
@@ -917,7 +1181,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
         <p className="hint">
           Buffer that goes into wells without a compound — a vehicle control, a buffer-only
           channel. <strong>Matched vehicle</strong> is made of the DMSO diluent, so those wells see
-          the same DMSO as the treated ones{result.target > 0 ? ` (${round(result.target * 100, 3)} %)` : ' (nothing to match right now, so it is plain buffer)'};{' '}
+          the same DMSO as the treated ones{result.target > 0 ? ` (${fmtDmsoPct(result.target)})` : ' (nothing to match right now, so it is plain buffer)'};{' '}
           <strong>plain buffer</strong> carries none. They have no dilution series, so they never
           become compounds — but their volume counts towards the diluents, the batch
           {result.fluorescein.enabled ? ' and the fluorescein in it' : ''}.

@@ -77,7 +77,7 @@ export function plateRows(project: Project, transfections: Paint[], treatments: 
     rows.push([
       { v: p.short, s: { font: { bold: true, sz: 10, color: { rgb: toXlsx(inkOn(background)) } }, fill: { fgColor: { rgb: toXlsx(background) } }, alignment: { horizontal: 'center' }, border: border() } },
       { v: p.label, s: { font: { sz: 11 } } },
-      { v: p.kind === 'transfection' ? 'cells' : p.kind === 'channel' ? 'buffer channel' : 'compound', s: { font: { sz: 10, italic: true, color: { rgb: '667085' } } } },
+      { v: p.kind === 'transfection' ? 'cells' : p.kind === 'channel' ? 'buffer channel' : p.kind === 'inhibitor' ? 'inhibitor' : 'compound', s: { font: { sz: 10, italic: true, color: { rgb: '667085' } } } },
     ]);
   }
 

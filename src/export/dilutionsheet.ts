@@ -4,8 +4,8 @@
  */
 
 import * as XLSX from 'xlsx-js-style';
-import type { DilutionResult } from '../calc/dilutions';
-import { round, roundUl } from '../calc/units';
+import { dmsoPlacementOf, type DilutionResult } from '../calc/dilutions';
+import { fmtDmsoPct, round, roundUl } from '../calc/units';
 import { slug, triggerDownload, type Project } from '../state/project';
 
 type CellValue = string | number | null;
@@ -88,8 +88,8 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
     [{ v: 'Printed', s: label() }, { v: new Date().toLocaleString(), s: muted() }],
     [],
     section('DMSO VEHICLE MATCHING  (concentrations, not volumes)'),
-    param('DMSO in every tube', pct(result.target)),
-    param('DMSO in the well', pct(result.inWellDmso), exp.dmsoPlacement === 'all-buffers' ? 'every buffer carries it' : `after the ${round(result.additionFactor, 3)}× addition`),
+    param('DMSO in every tube', fmtDmsoPct(result.target)),
+    param('DMSO in the well', fmtDmsoPct(result.inWellDmso), dmsoPlacementOf(exp) === 'all-buffers' ? 'every buffer carries it' : `after the ${round(result.additionFactor, 3)}× addition`),
     param('Set by', exp.dmsoOverride !== null ? 'a forced value' : result.computedTarget > 0 ? 'the worst DMSO stock' : 'no DMSO stocks in use'),
     ...result.bufferChannels.map((c) =>
       param(
@@ -98,11 +98,24 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
         c.matched ? 'made of the DMSO diluent' : 'made of the plain diluent',
       ),
     ),
+    ...(result.inhibitors
+      ? [
+          param(
+            'DMSO in every inhibitor solution',
+            fmtDmsoPct(result.inhibitors.target),
+            result.inhibitors.sharesCompoundDiluent ? 'the same diluent as the compounds' : 'its own diluent; the vehicle is that diluent alone',
+          ),
+          param('DMSO in the well before compounds', fmtDmsoPct(result.inhibitors.inWellDmsoBeforeCompounds)),
+        ]
+      : []),
     param(
       'The well',
-      `${exp.addition.assayBuffer_ul} µl buffer + ${result.substrate.enabled ? `${exp.substrate.volumePerWell_ul} µl substrate + ` : ''}${exp.addition.compound_ul} µl compound`,
+      `${exp.addition.assayBuffer_ul} µl buffer + ${result.substrate.enabled ? `${exp.substrate.volumePerWell_ul} µl substrate + ` : ''}${result.inhibitors ? `${exp.inhibitors!.volumePerWell_ul} µl inhibitor + ` : ''}${exp.addition.compound_ul} µl compound`,
       `compound diluted ${round(result.additionFactor, 3)}×`,
     ),
+    ...(exp.compoundPlate_ul
+      ? [param('Compound plate', `${project.layout.format}, ${roundUl(exp.compoundPlate_ul)} µl per well`, `laid out like the cell plate; ${roundUl(exp.addition.compound_ul)} µl of each goes on the cells`)]
+      : []),
     ...(exp.bsa.enabled
       ? [
           [],
@@ -130,7 +143,7 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
       { v: r.bsaStock_ul > 0 ? roundUl(r.bsaStock_ul) : '—', s: pipette() },
       { v: r.components.length > 0 ? r.components.map((c) => `${c.name}: ${roundUl(c.volume_ul)}`).join(' · ') : '—', s: pipette() },
     ]),
-    [{ v: result.target > 0 ? `The DMSO diluent is ${result.assay.diluent} premixed at ${pct(result.target)} DMSO; the other carries none.` : 'No DMSO stocks: plain diluent throughout.', s: muted() }],
+    [{ v: result.target > 0 ? `The DMSO diluent is ${result.assay.diluent} premixed at ${fmtDmsoPct(result.target)} DMSO; the other carries none.` : 'No DMSO stocks: plain diluent throughout.', s: muted() }],
     [{ v: 'Make the batch first, then take from it for each of the others.', s: muted() }],
     ...(result.plainBuffer_ul > 0
       ? ([[
@@ -158,7 +171,7 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
         {
           v: r.correctedFor.length > 0
             ? `${r.name}: topped up with extra ${r.correctedFor.join(' and ')} to stay on target after the stocks displaced some buffer.`
-            : `${r.name}: the stocks leave ${r.leftShortFor.map((x) => `${x.name} at ${round(x.achieved * 100, 5)} % (target ${round(x.target * 100, 5)} %)`).join(', ')} — inside pipetting error, left as is.`,
+            : `${r.name}: the stocks leave ${r.leftShortFor.map((x) => `${x.name} ${round((1 - x.achieved / x.target) * 100, 1)} % under its ${x.name === 'DMSO' ? fmtDmsoPct(x.target) : `${round(x.target * 100, 4)} %`} target`).join(', ')} — inside pipetting error, left as is.`,
           s: muted(),
         },
       ]),
@@ -243,6 +256,44 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
     if (sub.notes.trim()) rows.push([{ v: sub.notes, s: muted() }]);
   }
 
+  if (result.inhibitors) {
+    const inh = result.inhibitors;
+    const bold = (v: string, right = true): Cell => ({ v, s: { font: { bold: true }, alignment: { horizontal: right ? 'right' : 'left' } } });
+    rows.push([], section('INHIBITORS — BEFORE THE COMPOUNDS'));
+    rows.push(
+      param('Added per well', `${exp.inhibitors!.volumePerWell_ul} µl`, `made at ${round(inh.defaultFold, 3)}× unless listed otherwise; ${roundUl(inh.perWell_ul)} µl prepared per well`),
+    );
+    rows.push([
+      bold('Inhibitor', false),
+      bold('In well (µM)'),
+      bold('In tube (µM)'),
+      bold('Prepare (µl)'),
+      bold('Stock (µl)'),
+      bold(`${result.assay.normalBufferName} (µl)`),
+      bold('+ DMSO diluent (µl)'),
+    ]);
+    for (const item of inh.items) {
+      const source = exp.inhibitors!.items.find((x) => x.id === item.id)!;
+      const t = item.tube;
+      rows.push([
+        { v: `${item.name || 'inhibitor'} — ${source.stockConc_uM} µM in ${source.vehicle}, ${item.wells} wells${item.fold !== inh.defaultFold ? `, ×${round(item.fold, 3)}` : ''}`, s: label() },
+        { v: round(source.conc_uM, 4), s: value() },
+        { v: round(item.tubeConc_uM, 4), s: value() },
+        { v: t ? t.volToPrepare_ul : '—', s: pipette() },
+        { v: t ? roundUl(t.aliquotIn_ul) : '—', s: pipette() },
+        { v: t ? roundUl(t.normalBuffer_ul) : '—', s: pipette() },
+        { v: t ? roundUl(t.dmsoBuffer_ul) : '—', s: pipette() },
+      ]);
+    }
+    rows.push(
+      param(
+        'Matched vehicle',
+        `${roundUl(inh.vehicle.required_ul)} µl`,
+        `${inh.vehicle.wells} wells — ${inh.vehicle.matched ? `the inhibitors' DMSO diluent alone (${fmtDmsoPct(inh.target)})` : `plain ${result.assay.diluent}`}`,
+      ),
+    );
+  }
+
   rows.push([]);
 
   result.blocks
@@ -307,6 +358,7 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
     section('ORDER OF WORK'),
     [{ v: `1. Premix the diluents above — all of them in ${result.assay.diluent}.`, s: label() }],
     ...(result.substrate.enabled ? [[{ v: '1b. Prepare the substrate solution in that same buffer.', s: label() }] as Row] : []),
+    ...(result.inhibitors ? [[{ v: '1c. Make each inhibitor solution (stock first, then the buffers) and pour off the vehicle.', s: label() }] as Row] : []),
     [{ v: '2. For each compound, start at the top tube: add its stock aliquot, then the buffers.', s: label() }],
     [{ v: '3. Work downwards, each tube drawing its aliquot from the tube above it.', s: label() }],
     [{ v: '4. "Left for wells" is what remains once the tube below has taken its aliquot.', s: label() }],

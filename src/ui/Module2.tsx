@@ -15,7 +15,7 @@ import {
   type PlateLayout,
   type WellState,
 } from '../calc/layout';
-import { diagonalSplit, inkOn, tint } from '../calc/palette';
+import { diagonalSplit, inkOn, tint, WELL_TINT } from '../calc/palette';
 import { PLATE_GEOMETRY } from '../calc/types';
 import { fmtUl } from '../calc/units';
 import { exportLayoutXlsx } from '../export/layoutsheet';
@@ -261,7 +261,7 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
                     const w = wells.find((x) => x.row === row && x.col === col)!;
                     const paints = w.treatments.map((t) => paintById.get(t)).filter((p): p is Paint => Boolean(p));
                     const seed = w.transfectionId ? paintById.get(w.transfectionId) : undefined;
-                    const fills = paints.map((p) => tint(p.colour, 0.36));
+                    const fills = paints.map((p) => tint(p.colour, WELL_TINT));
                     return (
                       <td
                         key={col}

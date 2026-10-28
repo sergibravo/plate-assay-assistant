@@ -50,6 +50,9 @@ export function shade(base: string, rank: number, count: number): string {
   return rgbToHex(255 - (255 - r) * strength, 255 - (255 - g) * strength, 255 - (255 - b) * strength);
 }
 
+/** How strongly a well is filled with its treatment's colour, on screen and in Excel alike. */
+export const WELL_TINT = 0.36;
+
 /** A background tint of a colour, for filling a cell without drowning the text on it. */
 export function tint(base: string, amount = 0.18): string {
   const [r, g, b] = hexToRgb(base);

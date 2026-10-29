@@ -29,6 +29,20 @@ Sources:
 | Filler % | T `DNA Mixes!D14` | `MAX(0, 100 − Σ other %)` | `fillerPct` |
 | Composition check | T `DNA Mixes!C20` | `IF(sum=100,"✓ OK","⚠ ≠ 100%")` | `computeCondition` |
 
+**Units.** Every row above is per *unit* × units: a unit is a well (plate mode) or a dish
+(dish mode), and each condition has its own count (default: wells per condition, or 1 dish).
+`unitRecipe` gives one unit's DNA, OptiMEM for each tube, PEI, cells and medium; the master
+mix and cell suspension are sized from the **sum** of the units of the conditions in use, so
+a 32-well and an 8-well condition get the same mix per well. A plate well splits its OptiMEM
+evenly between the two tubes (`Setup!C26`/`C27`); a dish states each tube's OptiMEM.
+
+| Quantity, dish mode | Formula | Implemented in |
+| --- | --- | --- |
+| DNA / dish (ng) | dna_µg × 1000 | `unitRecipe` |
+| PEI / dish (µl) | dna_ng × ratio / 1000 / PEI stock — 6 cm: 3000 × 3 / 1000 / 1 = 9 µl | `unitRecipe` |
+| PEI mix into a DNA tube (µl) | (PEI + OptiMEM for PEI) per unit × the condition's units | `perCondition` |
+| Cells / dish (k), medium (µl) | cells_M × 1000, medium_ml × 1000 | `unitRecipe` |
+
 Reference values reproduced by the test suite (N=12, 100 ng/well, PEI:DNA 3, PEI 1 µg/µl,
 OptiMEM 10 µl/well, margin 1.2, 8 conditions): 1200 ng · 1440 ng · 3.6 µl · 60 µl · 60 µl ·
 1200 µl · 360 k cells; master mix 34.56 µl PEI, 576 µl OptiMEM, 11520 µl DMEM, 3456 k cells;

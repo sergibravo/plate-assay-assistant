@@ -118,7 +118,6 @@ export function TextField({ label, value, onChange, placeholder }: { label: stri
     <div className="field">
       <label>{label}</label>
       <input type="text" value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
-      <span className="unit" />
     </div>
   );
 }

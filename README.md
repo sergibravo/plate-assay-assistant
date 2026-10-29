@@ -92,6 +92,8 @@ npm test
 ## Modules
 
 1. **Transfection calculator** — ✅ built (`Setup`, `PEI Mix`, `DNA Mixes` sheets).
+   Reverse transfection in a 96-well plate, or in a dish (6-well, 6 cm, 10 cm) with lab
+   defaults per size; each condition can take its own well or dish count.
    Cells are entered in **thousands (k) per well**; margin applies to the master mixes only;
    DNA stocks carry a lab ID; the condition grid grows, shrinks and may be ragged; OptiMEM
    per DNA tube is either a fixed volume added or a target final volume; the Excel bench

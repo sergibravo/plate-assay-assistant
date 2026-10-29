@@ -277,7 +277,7 @@ describe('older files', () => {
       dilutions: { assayType: 'HiBiT', addition: { compound_ul: 10, assayBuffer_ul: 80 } },
     });
     expect(m.version).toBe(PROJECT_VERSION);
-    expect(PROJECT_VERSION).toBe(6);
+    expect(PROJECT_VERSION).toBe(7);
     expect(m.dilutions.compoundPlate_ul).toBeNull();
     expect(m.dilutions.inhibitors!.enabled).toBe(false);
   });

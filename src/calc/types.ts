@@ -52,9 +52,55 @@ export interface Compound {
   notes: string;
 }
 
+/**
+ * Where the transfection happens: reverse transfection straight into a 96-well plate, or a
+ * dish (cells seeded together with the mix, as in the plate) to be replated later.
+ */
+export type TransfectionMode = 'plate' | 'dish';
+
+export type DishSize = '6-well' | '6 cm' | '10 cm';
+
+/** One dish (for '6-well', one well of the plate). Units are the ones typed at the bench. */
+export interface DishParams {
+  size: DishSize;
+  /** Total DNA per dish (µg). */
+  dna_ug: number;
+  /** OptiMEM in the DNA tube, per dish (µl). */
+  optimemForDna_ul: number;
+  /** OptiMEM in the PEI mix, per dish (µl). */
+  optimemForPei_ul: number;
+  /** Cells per dish (millions). */
+  cells_M: number;
+  /** DMEM the cells are seeded in, per dish (ml). */
+  medium_ml: number;
+  /** Extra PEI master mix (µl) — as `transfectionMixExtra_ul`, for dishes. */
+  mixExtra_ul: number;
+  /** Extra cell suspension (µl) — as `cellSuspensionExtra_ul`, for dishes. */
+  cellExtra_ul: number;
+}
+
+/**
+ * Lab defaults per dish size. 6 cm is the reference; 6-well and 10 cm are scaled from it by
+ * growth area and rounded, except the medium, which is what the lab actually uses.
+ */
+export const DISH_DEFAULTS: Record<DishSize, Omit<DishParams, 'size' | 'mixExtra_ul' | 'cellExtra_ul'>> = {
+  '6-well': { dna_ug: 1.5, optimemForDna_ul: 75, optimemForPei_ul: 75, cells_M: 0.5, medium_ml: 2 },
+  '6 cm': { dna_ug: 3, optimemForDna_ul: 150, optimemForPei_ul: 150, cells_M: 1.2, medium_ml: 3 },
+  '10 cm': { dna_ug: 8, optimemForDna_ul: 400, optimemForPei_ul: 400, cells_M: 3, medium_ml: 5 },
+};
+
+export function defaultDish(size: DishSize = '6 cm'): DishParams {
+  return { size, ...DISH_DEFAULTS[size], mixExtra_ul: 0, cellExtra_ul: 0 };
+}
+
 /** Module 1 global parameters (the `Setup` sheet). */
 export interface TransfectionParams {
-  /** Wells per condition, N — `Setup!C4`. */
+  mode: TransfectionMode;
+  /** Free text, printed on the bench sheet. */
+  cellLine: string;
+  /** Used in dish mode only; the plate fields below are left as they were. */
+  dish: DishParams;
+  /** Wells per condition, N — `Setup!C4`. A condition can override it (`wells`). */
   wellsPerCondition: number;
   /** DNA per well (ng) — `Setup!C5`. */
   dna_ng_per_well: number;
@@ -110,6 +156,12 @@ export interface TransfectionCondition {
   /** User label, e.g. "low hibit". */
   label: string;
   entries: DnaMixEntry[];
+  /**
+   * Wells (plate mode) or dishes (dish mode) for this condition; `null` takes the default.
+   * Kept apart so switching mode never reads a 32-well count as 32 dishes.
+   */
+  wells: number | null;
+  dishes: number | null;
 }
 
 export interface DnaMixGrid {

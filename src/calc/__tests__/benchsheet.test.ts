@@ -76,3 +76,46 @@ describe('bench sheet export', () => {
     expect(out.byteLength).toBeGreaterThan(0);
   });
 });
+
+describe('bench sheet in dish mode, with an own count', () => {
+  const base = demoProject();
+  const project = {
+    ...base,
+    transfection: { ...base.transfection, mode: 'dish' as const },
+    // A1 on two 6 cm dishes, A2 at the default one.
+    grid: { ...base.grid, conditions: base.grid.conditions.map((row) => row.map((c) => (c.code === 'A1' ? { ...c, dishes: 2 } : c))) },
+  };
+  const per = perCondition(project.transfection);
+  const grid = computeGrid(project.transfection, project.grid, project.dnaStocks);
+  const mix = masterMix(project.transfection, grid.activeUnits);
+  const { setup, dnaMixes } = transfectionBenchSheetRows(project, per, mix, grid.conditions);
+  const flat = (rows: unknown[][]) => rows.flat().map((c) => (c && typeof c === 'object' ? (c as { v: unknown }).v : c));
+
+  it('says it is a 6 cm dish transfection, of which cells', () => {
+    const cells = flat(setup);
+    expect(cells).toContain('DISH TRANSFECTION BENCH SHEET — 6 cm');
+    expect(cells).toContain('HEK293 parental');
+    expect(cells).toContain('DNA per dish');
+    expect(cells).not.toContain('DNA per well');
+  });
+
+  it('sizes the master mix from 3 dishes: 27 µl PEI + 450 µl OptiMEM', () => {
+    expect(mix.totalUnits).toBe(3);
+    const cells = flat(setup);
+    expect(cells).toContain(roundUl(27));
+    expect(cells).toContain(450);
+  });
+
+  it('gives each condition its count and its own PEI mix volume', () => {
+    const cells = flat(dnaMixes);
+    expect(cells.some((v) => typeof v === 'string' && v.startsWith('A1') && v.includes('2 dishes (own count)'))).toBe(true);
+    expect(cells.some((v) => typeof v === 'string' && v.startsWith('A2') && v.includes('1 dish'))).toBe(true);
+    // 2 dishes: 18 µl PEI + 300 µl OptiMEM; 1 dish: 9 + 150
+    expect(cells).toContain(roundUl(318));
+    expect(cells).toContain(roundUl(159));
+  });
+
+  it('no longer tells the bench to add an equal volume to every tube', () => {
+    expect(flat(setup).some((v) => typeof v === 'string' && v.includes('equal volume'))).toBe(false);
+  });
+});

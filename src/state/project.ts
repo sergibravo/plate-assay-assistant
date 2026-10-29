@@ -8,6 +8,7 @@ import type { BufferChannel, CompoundBlock, DilutionExperiment, Inhibitor, Inhib
 import { defaultFluorescein, defaultTb } from '../calc/deret';
 import { emptyLayout, wellsPerTreatment, type PlateLayout } from '../calc/layout';
 import { NEUTRAL, paletteColour } from '../calc/palette';
+import { defaultDish } from '../calc/types';
 import { defaultSubstrate } from '../calc/substrate';
 import type {
   Compound,
@@ -17,7 +18,7 @@ import type {
   TransfectionParams,
 } from '../calc/types';
 
-export const PROJECT_VERSION = 6 as const;
+export const PROJECT_VERSION = 7 as const;
 
 export interface Project {
   version: typeof PROJECT_VERSION;
@@ -54,6 +55,8 @@ export function emptyCondition(rowGroup: number, col: number, stocks: DnaStock[]
     code: conditionCode(rowGroup, col),
     label: '',
     entries: stocks.map((s) => ({ dnaStockId: s.id, pct: null })),
+    wells: null,
+    dishes: null,
   };
 }
 
@@ -229,6 +232,9 @@ export function newProject(name = 'Untitled experiment'): Project {
     { id: uid('dna'), plasmidId: '', name: 'pcDNA', stockConc_ng_per_ul: 1000, notes: 'Empty vector / filler', isFiller: true },
   ];
   const transfection: TransfectionParams = {
+    mode: 'plate',
+    cellLine: 'HEK293 parental',
+    dish: defaultDish('6 cm'),
     wellsPerCondition: 12,
     dna_ng_per_well: 100,
     optimem_ul_per_well: 10,
@@ -349,9 +355,22 @@ export function migrate(raw: any): Project {
     // and the defaults below (no compound plate, step off) leave every number as it was.
     p.version = 6;
   }
+  if (p.version === 6) {
+    // v7 adds the dish mode and per-condition well/dish counts. An older file is a plate
+    // transfection with every condition at the default count — exactly what it computed.
+    p.version = 7;
+  }
   p.dnaStocks = (p.dnaStocks ?? []).map((s: any) => ({ plasmidId: '', notes: '', ...s }));
-  // Fields added after a project was saved fall back to the previous behaviour.
-  p.transfection = { optimemMode: 'fixed', ...p.transfection };
+  // Fields added after a project was saved fall back to the previous behaviour. The cell line
+  // stays blank rather than claiming one the file never recorded.
+  p.transfection = { optimemMode: 'fixed', mode: 'plate', cellLine: '', ...p.transfection };
+  p.transfection.dish = { ...defaultDish(p.transfection.dish?.size ?? '6 cm'), ...(p.transfection.dish ?? {}) };
+  if (p.grid?.conditions) {
+    p.grid = {
+      ...p.grid,
+      conditions: p.grid.conditions.map((row: any[]) => row.map((c: any) => ({ ...c, wells: c.wells ?? null, dishes: c.dishes ?? null }))),
+    };
+  }
   // Note what the stored file actually had before defaults paper over it.
   const storedDilutions = p.dilutions ?? {};
   const hadAddition = storedDilutions.addition !== undefined;

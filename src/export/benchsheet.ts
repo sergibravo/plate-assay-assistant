@@ -8,7 +8,7 @@
  */
 
 import * as XLSX from 'xlsx-js-style';
-import type { DnaMixResult, MasterMixTotals, PerConditionTotals } from '../calc/transfection';
+import { unitLabel, unitRecipe, type DnaMixResult, type MasterMixTotals, type PerConditionTotals } from '../calc/transfection';
 import type { TransfectionParams } from '../calc/types';
 import { round, roundUl } from '../calc/units';
 import { slug, triggerDownload, type Project } from '../state/project';
@@ -85,27 +85,49 @@ export function transfectionBenchSheetRows(
     { v: '', s: sectionHead() },
   ];
 
+  const u = unitRecipe(p);
+  const units = (n: number) => unitLabel(u.unit, n);
+  const modeParams: Row[] =
+    p.mode === 'dish'
+      ? [
+          param('Dish', p.dish.size === '6-well' ? '6-well (values per well)' : p.dish.size, ''),
+          param('Dishes per condition', 1, 'unless the condition says otherwise'),
+          param('DNA per dish', p.dish.dna_ug, 'µg'),
+          param('OptiMEM for DNA per dish', p.dish.optimemForDna_ul, 'µl'),
+          param('OptiMEM for PEI per dish', p.dish.optimemForPei_ul, 'µl'),
+          param('OptiMEM mode', p.optimemMode === 'fixed' ? 'fixed volume added' : 'target final volume', ''),
+          param('PEI:DNA ratio', p.peiDnaRatio, 'w/w'),
+          param('Extra transfection mix', p.dish.mixExtra_ul, 'µl'),
+          param('Extra cell suspension', p.dish.cellExtra_ul, 'µl'),
+          param('Cells per dish', p.dish.cells_M, 'M cells'),
+          param('DMEM per dish', p.dish.medium_ml, 'ml'),
+        ]
+      : [
+          param('Wells per condition', p.wellsPerCondition, 'wells, unless the condition says otherwise'),
+          param('DNA per well', p.dna_ng_per_well, 'ng'),
+          param('OptiMEM per well', p.optimem_ul_per_well, 'µl'),
+          param('OptiMEM mode', p.optimemMode === 'fixed' ? 'fixed volume added' : 'target final volume', ''),
+          param('PEI:DNA ratio', p.peiDnaRatio, 'w/w'),
+          param('Extra transfection mix', p.transfectionMixExtra_ul, 'µl'),
+          param('Extra cell suspension', p.cellSuspensionExtra_ul, 'µl'),
+          param('Cells per well', p.cells_k_per_well, 'k cells'),
+          param('DMEM per well', p.dmem_ul_per_well, 'µl'),
+          param('Plate format', p.plateFormat, ''),
+        ];
+
   const setup: Row[] = [
-    [{ v: 'REVERSE-TRANSFECTION BENCH SHEET', s: title() }],
+    [{ v: p.mode === 'dish' ? `DISH TRANSFECTION BENCH SHEET — ${p.dish.size}` : 'REVERSE-TRANSFECTION BENCH SHEET', s: title() }],
     [{ v: 'Experiment', s: label() }, { v: project.name, s: { font: { bold: true } } }],
+    [{ v: 'Cell line', s: label() }, { v: p.cellLine, s: { font: { bold: true } } }],
     [{ v: 'Printed', s: label() }, { v: new Date().toLocaleString(), s: muted() }],
     [],
     section('PARAMETERS'),
-    param('Wells per condition', p.wellsPerCondition, 'wells'),
-    param('DNA per well', p.dna_ng_per_well, 'ng'),
-    param('OptiMEM per well', p.optimem_ul_per_well, 'µl'),
-    param('OptiMEM mode', p.optimemMode === 'fixed' ? 'fixed volume added' : 'target final volume', ''),
-    param('PEI:DNA ratio', p.peiDnaRatio, 'w/w'),
-    param('Extra transfection mix', p.transfectionMixExtra_ul, 'µl'),
-    param('Extra cell suspension', p.cellSuspensionExtra_ul, 'µl'),
-    param('Cells per well', p.cells_k_per_well, 'k cells'),
-    param('DMEM per well', p.dmem_ul_per_well, 'µl'),
+    ...modeParams,
     param('PEI stock', p.pei_ug_per_ul, 'µg/µl'),
-    param('Plate format', p.plateFormat, ''),
     param('OptiMEM lot #', p.optimemLot, ''),
     param('PEI lot #', p.peiLot, ''),
     [],
-    section('PER CONDITION'),
+    section(`PER CONDITION OF ${units(per.units).toUpperCase()}`),
     param('Total DNA', round(per.totalDna_ng, 3), 'ng'),
     param('PEI', roundUl(per.pei_ul), 'µl'),
     param('OptiMEM for DNA', roundUl(per.optimemForDna_ul), 'µl'),
@@ -113,17 +135,17 @@ export function transfectionBenchSheetRows(
     param('DMEM', roundUl(per.dmem_ul), 'µl'),
     param('Cells', round(per.cells_k, 2), 'k cells'),
     [],
-    section(`PEI MASTER MIX — ${mix.nConditions} conditions + ${round(p.transfectionMixExtra_ul, 1)} µl extra`),
+    section(`PEI MASTER MIX — ${mix.nConditions} conditions, ${units(mix.totalUnits)} + ${round(u.mixExtra_ul, 1)} µl extra`),
     [{ v: 'Pipette these two into one tube:', s: muted() }],
     [{ v: 'Total PEI', s: pipetteLabel() }, { v: roundUl(mix.totalPei_ul), s: pipette() }, { v: 'µl', s: unit() }],
     [{ v: 'Total OptiMEM for PEI', s: pipetteLabel() }, { v: roundUl(mix.totalOptimemForPei_ul), s: pipette() }, { v: 'µl', s: unit() }],
     param('→ combined volume', roundUl(mix.totalPei_ul + mix.totalOptimemForPei_ul), 'µl'),
     [],
-    section(`CELL SUSPENSION — ${mix.nConditions} conditions + ${round(p.cellSuspensionExtra_ul, 1)} µl extra`),
+    section(`CELL SUSPENSION — ${units(mix.totalUnits)} + ${round(u.cellExtra_ul, 1)} µl extra`),
     [{ v: 'DMEM total', s: pipetteLabel() }, { v: roundUl(mix.dmemTotal_ul), s: pipette() }, { v: 'µl', s: unit() }],
     [{ v: 'Total cells needed', s: pipetteLabel() }, { v: round(mix.totalCells_k, 1), s: pipette() }, { v: 'k cells', s: unit() }],
     param('  (= millions)', round(mix.totalCells_k / 1000, 4), 'M'),
-    param('Suspension per condition', roundUl(mix.cellSuspensionPerCondition_ul), 'µl'),
+    param(`Suspension per ${u.unit}`, roundUl(u.medium_ul), 'µl'),
     [],
     section('DNA STOCKS USED'),
     [
@@ -142,14 +164,15 @@ export function transfectionBenchSheetRows(
     ]);
   }
 
+  const target = p.mode === 'dish' ? 'dish(es)' : 'wells';
   setup.push([], section('PROTOCOL'));
   for (const step of [
     '1. Prepare DNA + OptiMEM mixes per condition (see DNA Mixes sheet).',
     '2. Prepare the PEI + OptiMEM master mix (values above).',
-    '3. Add an equal volume of PEI/OptiMEM to each DNA/OptiMEM tube.',
+    "3. Add to each DNA/OptiMEM tube the PEI mix volume given under that condition — it follows the condition's own count.",
     '4. Incubate 15–20 min at RT.',
-    '5. Add the transfection complex to the wells.',
-    '6. Add the cell suspension to the wells.',
+    `5. Add the transfection complex to the ${target}.`,
+    `6. Add the cell suspension to the ${target}.`,
     '7. Incubate at 37 °C, 5 % CO₂.',
   ]) {
     setup.push([{ v: step, s: label() }]);
@@ -196,7 +219,7 @@ export function transfectionBenchSheetRows(
 
       dnaMixes.push([
         {
-          v: `${c.code}${c.label ? ` — ${c.label}` : ''}`,
+          v: `${c.code}${c.label ? ` — ${c.label}` : ''} · ${units(c.units)}${c.unitsOverridden ? ' (own count)' : ''}`,
           s: { font: { bold: true, sz: 12, color: { rgb: colour.head } } },
         },
       ]);
@@ -230,6 +253,20 @@ export function transfectionBenchSheetRows(
         { v: '', s: label() },
         { v: '', s: label() },
         { v: roundUl(c.tubeTotal_ul), s: { alignment: { horizontal: 'right' }, font: { color: { rgb: MUTED } } } },
+      ]);
+      dnaMixes.push([
+        { v: '', s: label() },
+        { v: '+ PEI mix (from master mix)', s: pipetteLabel() },
+        { v: '', s: label() },
+        { v: '', s: label() },
+        { v: roundUl(c.peiMix_ul), s: pipette() },
+      ]);
+      dnaMixes.push([
+        { v: '', s: label() },
+        { v: `Cell suspension (${round(c.cells_k / 1000, 3)} M cells)`, s: muted() },
+        { v: '', s: label() },
+        { v: '', s: label() },
+        { v: roundUl(c.cellSuspension_ul), s: { alignment: { horizontal: 'right' }, font: { color: { rgb: MUTED } } } },
       ]);
       dnaMixes.push([
         {

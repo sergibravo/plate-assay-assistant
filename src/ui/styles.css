@@ -104,6 +104,8 @@ main { padding: 14px 16px 40px; }
   border: 1px solid var(--input-border); background: var(--input-bg); border-radius: 4px;
 }
 .field select, .field input[type="text"] { text-align: left; }
+/* Free text has no unit, so it takes the unit column too. */
+.field input[type="text"] { grid-column: 2 / 4; }
 .field output.calc {
   text-align: right; border: 1px solid var(--calc-border); background: var(--calc-bg);
   font-variant-numeric: tabular-nums; display: block;
@@ -191,6 +193,10 @@ tr.total td { font-weight: 600; background: #f4f6f9; }
 .cond-card > header .code { font-weight: 700; font-size: 11.5px; color: var(--muted); }
 .cond-card > header input { flex: 1; min-width: 0; border: 1px solid var(--input-border); background: var(--input-bg); border-radius: 4px; padding: 2px 6px; font: inherit; }
 .cond-card.empty { opacity: .5; background: #fafbfc; }
+.cond-units { display: flex; gap: 6px; align-items: center; padding: 4px 7px; font-size: 11.5px; color: var(--muted); border-bottom: 1px solid var(--line-soft); }
+.cond-units input { width: 56px; border: 1px solid var(--input-border); background: var(--input-bg); border-radius: 4px; padding: 1px 4px; font: inherit; text-align: right; }
+.cond-units.own { color: var(--ink, #16181d); font-weight: 600; }
+.cond-units.own input { border-color: var(--accent); }
 .cond-card table { border: none; }
 .cond-card th:first-child, .cond-card td:first-child { border-left: none; }
 .cond-card th:last-child, .cond-card td:last-child { border-right: none; }

@@ -7,13 +7,16 @@ import {
   perCondition,
   validateParams,
 } from '../transfection';
-import { PLATE_GEOMETRY, type DnaStock, type TransfectionCondition, type TransfectionParams } from '../types';
+import { defaultDish, PLATE_GEOMETRY, type DnaStock, type TransfectionCondition, type TransfectionParams } from '../types';
 
 /**
  * Reference values are the *computed* cell values stored in
  * `260821_hibit_transfection_optimisation_dilutions_template.xlsx`.
  */
 const SHEET_PARAMS: TransfectionParams = {
+  mode: 'plate',
+  cellLine: '',
+  dish: defaultDish(),
   wellsPerCondition: 12, // Setup!C4
   dna_ng_per_well: 100, // Setup!C5
   optimem_ul_per_well: 10, // Setup!C6
@@ -74,6 +77,8 @@ describe('DNA Mixes sheet — condition A2 "low hibit"', () => {
     id: 'c1',
     code: 'A2',
     label: 'low hibit',
+    wells: null,
+    dishes: null,
     entries: [
       { dnaStockId: 'hibit', pct: 0.5 },
       { dnaStockId: 'arr3', pct: 0 },
@@ -122,6 +127,8 @@ describe('DNA mix edge cases', () => {
       id: 'c0',
       code: 'A5',
       label: '',
+      wells: null,
+      dishes: null,
       entries: [
         { dnaStockId: 'hibit', pct: null },
         { dnaStockId: 'pcdna', pct: null },
@@ -137,6 +144,8 @@ describe('DNA mix edge cases', () => {
       id: 'c2',
       code: 'A1',
       label: 'over',
+      wells: null,
+      dishes: null,
       entries: [
         { dnaStockId: 'hibit', pct: 60 },
         { dnaStockId: 'arr3', pct: 60 },
@@ -153,6 +162,8 @@ describe('DNA mix edge cases', () => {
       id: 'c3',
       code: 'A1',
       label: 'tiny',
+      wells: null,
+      dishes: null,
       entries: [
         { dnaStockId: 'arr3', pct: 1 }, // 12 ng / 79 ng/µl = 0.152 µl
         { dnaStockId: 'pcdna', pct: null },
@@ -171,6 +182,8 @@ describe('DNA mix edge cases', () => {
       id: 'c4',
       code: 'A1',
       label: 'bulky',
+      wells: null,
+      dishes: null,
       entries: [
         { dnaStockId: 'weak', pct: 100 }, // 1200 ng / 5 = 240 µl > 60 µl OptiMEM
         { dnaStockId: 'pcdna', pct: null },
@@ -187,6 +200,8 @@ describe('grid + parameter validation', () => {
       id: code,
       code,
       label: '',
+      wells: null,
+      dishes: null,
       entries: [
         { dnaStockId: 'hibit', pct },
         { dnaStockId: 'pcdna', pct: null },
@@ -221,6 +236,8 @@ describe('filler-only control condition (the sheet\'s "no receptor" block)', () 
       id: 'ctrl',
       code: 'A1',
       label: 'no receptor',
+      wells: null,
+      dishes: null,
       entries: [
         { dnaStockId: 'hibit', pct: 0 },
         { dnaStockId: 'arr3', pct: 0 },
@@ -242,6 +259,8 @@ describe('OptiMEM mode', () => {
     id: 'c',
     code: 'A2',
     label: 'low hibit',
+    wells: null,
+    dishes: null,
     entries: [
       { dnaStockId: 'hibit', pct: 0.5 }, // 6 ng / 10 = 0.6 µl
       { dnaStockId: 'pcdna', pct: null }, // filler 99.5 % → 1194 ng / 1000 = 1.194 µl
@@ -271,6 +290,8 @@ describe('OptiMEM mode', () => {
       id: 'c2',
       code: 'A1',
       label: '',
+      wells: null,
+      dishes: null,
       entries: [
         { dnaStockId: 'weak', pct: 100 }, // 1200 ng / 5 = 240 µl > 60 µl target
         { dnaStockId: 'pcdna', pct: null },

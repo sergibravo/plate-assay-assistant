@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { computeGrid, masterMix, perCondition, validateParams } from '../calc/transfection';
-import type { DnaStock, PlateFormat } from '../calc/types';
+import { computeGrid, masterMix, perCondition, unitLabel, unitRecipe, validateParams } from '../calc/transfection';
+import { defaultDish, DISH_DEFAULTS, type DishParams, type DishSize, type DnaStock, type PlateFormat } from '../calc/types';
 import { fmtUl, round } from '../calc/units';
 import { exportTransfectionXlsx } from '../export/benchsheet';
 import {
@@ -18,20 +18,35 @@ import {
 import { CalcField, ConfirmButton, Legend, NumField, Panel, Segmented, SelectField, TextField, Warnings } from './components';
 
 const PLATE_FORMATS: readonly PlateFormat[] = ['96-well', 'half-area 96-well', '384-well'];
+const DISH_SIZES: readonly DishSize[] = ['6-well', '6 cm', '10 cm'];
 
 export function Module1({ project, update }: { project: Project; update: (p: Project) => void }) {
   const { transfection: p, dnaStocks, grid } = project;
 
+  const recipe = useMemo(() => unitRecipe(p), [p]);
+  const unit = recipe.unit;
   const per = useMemo(() => perCondition(p), [p]);
   const gridResult = useMemo(() => computeGrid(p, grid, dnaStocks), [p, grid, dnaStocks]);
+  // With nothing in use yet, show what one condition at the default count would need.
   const mix = useMemo(
-    () => masterMix(p, Math.max(gridResult.activeCount, 1)),
-    [p, gridResult.activeCount],
+    () => masterMix(p, gridResult.activeUnits.length > 0 ? gridResult.activeUnits : 1),
+    [p, gridResult.activeUnits],
   );
   const paramWarnings = useMemo(() => validateParams(p), [p]);
 
   const setParam = <K extends keyof typeof p>(key: K, value: (typeof p)[K]) =>
     update({ ...project, transfection: { ...p, [key]: value } });
+
+  const setDish = <K extends keyof DishParams>(key: K, value: DishParams[K]) => setParam('dish', { ...p.dish, [key]: value });
+  // A new size loads its own defaults; the extras are the user's and stay.
+  const setDishSize = (size: DishSize) =>
+    setParam('dish', { ...defaultDish(size), mixExtra_ul: p.dish.mixExtra_ul, cellExtra_ul: p.dish.cellExtra_ul });
+  const dishDefaults = DISH_DEFAULTS[p.dish.size];
+  const dishEdited = (Object.keys(dishDefaults) as (keyof typeof dishDefaults)[]).some((k) => p.dish[k] !== dishDefaults[k]);
+
+  /** This condition's own well or dish count; `null` returns it to the default. */
+  const setUnits = (conditionId: string, n: number | null) =>
+    setGrid(updateCondition(grid, conditionId, (c) => (unit === 'dish' ? { ...c, dishes: n } : { ...c, wells: n })));
 
   const setStocks = (stocks: DnaStock[]) =>
     update({ ...project, dnaStocks: stocks, grid: reconcileGrid(grid, stocks) });
@@ -65,28 +80,82 @@ export function Module1({ project, update }: { project: Project; update: (p: Pro
     <>
       <Warnings items={[...paramWarnings, ...gridResult.warnings]} />
 
-      <Panel title="Setup — global parameters">
-        <div className="grid-2">
-          <div>
-            <h3>General</h3>
-            <NumField label="Wells per condition" unit="wells" value={p.wellsPerCondition} min={1} onChange={(v) => setParam('wellsPerCondition', v)} />
-            <NumField label="DNA per well" unit="ng" value={p.dna_ng_per_well} onChange={(v) => setParam('dna_ng_per_well', v)} />
-            <NumField label="OptiMEM per well" unit="µl" value={p.optimem_ul_per_well} onChange={(v) => setParam('optimem_ul_per_well', v)} />
-            <NumField label="PEI:DNA ratio" unit="w/w" value={p.peiDnaRatio} onChange={(v) => setParam('peiDnaRatio', v)} />
-            <NumField label="Extra transfection mix" unit="µl" value={p.transfectionMixExtra_ul} step={10} onChange={(v) => setParam('transfectionMixExtra_ul', v)} />
-            <NumField label="Extra cell suspension" unit="µl" value={p.cellSuspensionExtra_ul} step={100} onChange={(v) => setParam('cellSuspensionExtra_ul', v)} />
-            <p className="hint">
-              Extra is an <strong>amount</strong>, not a percentage: how much more than the
-              conditions need. The mix extra keeps the PEI:OptiMEM ratio; the suspension extra
-              carries its own cells at the seeding density. Neither touches the per-condition DNA
-              volumes.
-            </p>
+      <Panel
+        title="Setup — global parameters"
+        actions={
+          <div className="no-print" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span style={{ fontSize: 11.5, color: '#667085' }}>Transfect in:</span>
+            <Segmented
+              value={p.mode}
+              options={[
+                { value: 'plate', label: '96-well plate (reverse)' },
+                { value: 'dish', label: 'Dish' },
+              ]}
+              onChange={(v) => setParam('mode', v)}
+            />
           </div>
+        }
+      >
+        <div className="grid-2">
+          {p.mode === 'plate' ? (
+            <div>
+              <h3>General</h3>
+              <NumField label="Wells per condition" unit="wells" value={p.wellsPerCondition} min={1} step={1} onChange={(v) => setParam('wellsPerCondition', v)} />
+              <NumField label="DNA per well" unit="ng" value={p.dna_ng_per_well} onChange={(v) => setParam('dna_ng_per_well', v)} />
+              <NumField label="OptiMEM per well" unit="µl" value={p.optimem_ul_per_well} onChange={(v) => setParam('optimem_ul_per_well', v)} />
+              <NumField label="PEI:DNA ratio" unit="w/w" value={p.peiDnaRatio} onChange={(v) => setParam('peiDnaRatio', v)} />
+              <NumField label="Extra transfection mix" unit="µl" value={p.transfectionMixExtra_ul} step={10} onChange={(v) => setParam('transfectionMixExtra_ul', v)} />
+              <NumField label="Extra cell suspension" unit="µl" value={p.cellSuspensionExtra_ul} step={100} onChange={(v) => setParam('cellSuspensionExtra_ul', v)} />
+              <p className="hint">
+                Wells per condition is the default; a condition can set its own count in its block
+                below (e.g. 32 wells for a CRC, 8 for a control). Every well gets the same mix — a
+                smaller condition just makes less of it. Include your spare wells in the count.
+                Extra is an <strong>amount</strong>, not a percentage: the mix extra keeps the
+                PEI:OptiMEM ratio; the suspension extra carries its own cells at the seeding density.
+              </p>
+            </div>
+          ) : (
+            <div>
+              <h3>Dish</h3>
+              <SelectField label="Dish" value={p.dish.size} options={DISH_SIZES} onChange={setDishSize} />
+              <NumField label="DNA per dish" unit="µg" value={p.dish.dna_ug} step={0.1} onChange={(v) => setDish('dna_ug', v)} />
+              <NumField label="OptiMEM for DNA" unit="µl / dish" value={p.dish.optimemForDna_ul} step={10} onChange={(v) => setDish('optimemForDna_ul', v)} />
+              <NumField label="OptiMEM for PEI" unit="µl / dish" value={p.dish.optimemForPei_ul} step={10} onChange={(v) => setDish('optimemForPei_ul', v)} />
+              <NumField label="PEI:DNA ratio" unit="w/w" value={p.peiDnaRatio} onChange={(v) => setParam('peiDnaRatio', v)} />
+              <NumField label="Extra transfection mix" unit="µl" value={p.dish.mixExtra_ul} step={10} onChange={(v) => setDish('mixExtra_ul', v)} />
+              <NumField label="Extra cell suspension" unit="µl" value={p.dish.cellExtra_ul} step={100} onChange={(v) => setDish('cellExtra_ul', v)} />
+              <p className="hint">
+                {p.dish.size === '6-well' ? 'Values are per well of the 6-well plate. ' : ''}
+                Choosing a dish loads its defaults (6 cm is the reference; 6-well and 10 cm are
+                scaled by growth area); every value can then be changed.
+                {dishEdited && (
+                  <>
+                    {' '}
+                    <button className="btn small no-print" onClick={() => setDishSize(p.dish.size)}>
+                      Reset to {p.dish.size} defaults
+                    </button>
+                  </>
+                )}{' '}
+                One dish per condition unless a block below says otherwise.
+              </p>
+            </div>
+          )}
           <div>
             <h3>Cells</h3>
-            <NumField label="Cells per well" unit="k cells" value={p.cells_k_per_well} step={1} onChange={(v) => setParam('cells_k_per_well', v)} />
-            <NumField label="DMEM per well" unit="µl" value={p.dmem_ul_per_well} onChange={(v) => setParam('dmem_ul_per_well', v)} />
-            <SelectField label="Plate format" value={p.plateFormat} options={PLATE_FORMATS} onChange={(v) => setParam('plateFormat', v)} />
+            <TextField label="Cell line" value={p.cellLine} placeholder="e.g. HEK293 parental" onChange={(v) => setParam('cellLine', v)} />
+            {p.mode === 'plate' ? (
+              <>
+                <NumField label="Cells per well" unit="k cells" value={p.cells_k_per_well} step={1} onChange={(v) => setParam('cells_k_per_well', v)} />
+                <NumField label="DMEM per well" unit="µl" value={p.dmem_ul_per_well} onChange={(v) => setParam('dmem_ul_per_well', v)} />
+                <SelectField label="Plate format" value={p.plateFormat} options={PLATE_FORMATS} onChange={(v) => setParam('plateFormat', v)} />
+              </>
+            ) : (
+              <>
+                <NumField label="Cells per dish" unit="M cells" value={p.dish.cells_M} step={0.1} onChange={(v) => setDish('cells_M', v)} />
+                <NumField label="DMEM per dish" unit="ml" value={p.dish.medium_ml} step={0.5} onChange={(v) => setDish('medium_ml', v)} />
+                <p className="hint">The cells go in with the transfection mix, as on the plate.</p>
+              </>
+            )}
           </div>
           <div>
             <h3>Reagents</h3>
@@ -95,7 +164,7 @@ export function Module1({ project, update }: { project: Project; update: (p: Pro
             <TextField label="PEI lot #" value={p.peiLot} onChange={(v) => setParam('peiLot', v)} />
           </div>
           <div>
-            <h3>Calculated summary (per condition)</h3>
+            <h3>Calculated summary <span className="sub">per condition of {unitLabel(unit, per.units)}</span></h3>
             <CalcField label="Total DNA" unit="ng" value={per.totalDna_ng} decimals={3} />
             <CalcField label="PEI" unit="µl" value={per.pei_ul} />
             <CalcField label="OptiMEM for DNA" unit="µl" value={per.optimemForDna_ul} />
@@ -199,26 +268,32 @@ export function Module1({ project, update }: { project: Project; update: (p: Pro
               <output className="calc">{gridResult.activeCount}</output>
               <span className="unit">blocks in use</span>
             </div>
+            <div className="field">
+              <label>{unit === 'dish' ? 'Dishes' : 'Wells'} in total</label>
+              <output className="calc">{mix.totalUnits}</output>
+              <span className="unit">{unitLabel(unit)}</span>
+            </div>
             <div className="pipette-box">
               <CalcField label="Total PEI" unit="µl" value={mix.totalPei_ul} strong />
               <CalcField label="Total OptiMEM for PEI" unit="µl" value={mix.totalOptimemForPei_ul} strong />
             </div>
             <p className="hint">
               Pipette these two into one tube — {fmtUl(mix.totalPei_ul + mix.totalOptimemForPei_ul)} µl
-              total: {gridResult.activeCount || 1} condition{gridResult.activeCount === 1 ? '' : 's'} plus {fmtUl(p.transfectionMixExtra_ul)} µl extra.
-              The OptiMEM is rounded up to whole µl — it is the diluent, so the PEI:DNA ratio is
-              untouched.
+              total: {unitLabel(unit, mix.totalUnits)} plus {fmtUl(recipe.mixExtra_ul)} µl extra.
+              Each DNA tube then gets the PEI mix shown in its block below. The OptiMEM is rounded
+              up to whole µl — it is the diluent, so the PEI:DNA ratio is untouched.
             </p>
-            <CalcField label="PEI per condition" unit="µl" value={mix.peiPerCondition_ul} />
-            <CalcField label="OptiMEM for PEI / condition" unit="µl" value={mix.optimemForPeiPerCondition_ul} />
+            <CalcField label={`PEI per ${unit}`} unit="µl" value={recipe.pei_ul} />
+            <CalcField label={`OptiMEM for PEI per ${unit}`} unit="µl" value={recipe.optimemForPei_ul} />
           </div>
           <div>
-            <h3>Cell suspension <span className="sub">+{fmtUl(p.cellSuspensionExtra_ul)} µl extra</span></h3>
+            <h3>Cell suspension <span className="sub">+{fmtUl(recipe.cellExtra_ul)} µl extra</span></h3>
             <div className="pipette-box">
               <CalcField label="DMEM total" unit="µl" value={mix.dmemTotal_ul} strong />
               <CalcField label="Total cells needed" unit="k cells" value={mix.totalCells_k} decimals={1} strong hint={`= ${round(mix.totalCells_k / 1000, 4)} M`} />
             </div>
-            <CalcField label="Suspension per condition" unit="µl" value={mix.cellSuspensionPerCondition_ul} />
+            <CalcField label={`Suspension per ${unit}`} unit="µl" value={recipe.medium_ul} />
+            <CalcField label={`Cells per ${unit}`} unit="k cells" value={recipe.cells_k} decimals={1} />
           </div>
         </div>
       </Panel>
@@ -323,6 +398,19 @@ export function Module1({ project, update }: { project: Project; update: (p: Pro
                         {res.isEmpty ? 'Use' : 'Clear'}
                       </button>
                     </header>
+                    <div className={`cond-units${res.unitsOverridden ? ' own' : ''}`}>
+                      <label htmlFor={`units-${cond.id}`}>{unit === 'dish' ? 'Dishes' : 'Wells'}</label>
+                      <input
+                        id={`units-${cond.id}`}
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={(unit === 'dish' ? cond.dishes : cond.wells) ?? ''}
+                        placeholder={String(recipe.defaultUnits)}
+                        onChange={(e) => setUnits(cond.id, e.target.value === '' ? null : Number(e.target.value))}
+                      />
+                      <span>{res.unitsOverridden ? `own count (default ${recipe.defaultUnits})` : 'default'}</span>
+                    </div>
                     <table>
                       <thead>
                         <tr>
@@ -368,6 +456,18 @@ export function Module1({ project, update }: { project: Project; update: (p: Pro
                           </td>
                           <td className="calc num">{fmtUl(res.tubeTotal_ul)}</td>
                         </tr>
+                        {!res.isEmpty && (
+                          <>
+                            <tr>
+                              <td colSpan={3}>+ PEI mix (from master mix)</td>
+                              <td className="calc num">{fmtUl(res.peiMix_ul)}</td>
+                            </tr>
+                            <tr>
+                              <td colSpan={3}>Cell suspension · {round(res.cells_k / 1000, 3)} M cells</td>
+                              <td className="calc num">{fmtUl(res.cellSuspension_ul)}</td>
+                            </tr>
+                          </>
+                        )}
                       </tbody>
                     </table>
                   </div>

@@ -349,10 +349,34 @@ last. Formula-level provenance lives in [formulas.md](formulas.md).
 - **File format 6.** An older build would misread a DMR file (unknown assay, inhibitors
   dropped), so it now refuses it instead.
 
+## Module 1: dishes and own counts (2026-10-29)
+
+- **Two places to transfect:** reverse transfection into the 96-well plate, or a dish
+  (6-well, 6 cm, 10 cm). In both the cells go in together with the mix, so the maths is the
+  same — a dish is a bigger well. One recipe per unit (`unitRecipe`) feeds both, so they
+  cannot drift apart.
+- **Dish defaults** (lab values; 6 cm is the reference, 6-well and 10 cm scaled by growth area
+  and rounded; the medium is what the lab uses): 6-well per well 1.5 µg DNA, 75 + 75 µl
+  OptiMEM, 0.5 M cells, 2 ml DMEM · 6 cm 3 µg, 150 + 150 µl, 1.2 M, 3 ml · 10 cm 8 µg,
+  400 + 400 µl, 3 M, 5 ml. PEI:DNA 3:1 everywhere. Choosing a size loads its defaults; every
+  value can be overridden, and a button resets them. No extra by default for dishes.
+- **Own count per condition.** A condition can set its own wells (or dishes); empty means the
+  default. Preparing less for a small condition is chemically safe — every well gets the same
+  ng/well, OptiMEM/well and ratio — but a small condition may hit the 0.5 µl pipetting
+  minimum, which the existing per-condition warning flags. The user includes spares in the count.
+- **Wells and dishes are stored apart** on each condition, so switching mode never reads a
+  32-well count as 32 dishes.
+- **Each DNA tube gets its own PEI-mix volume**, shown in its block and on the bench sheet. The
+  old protocol line "add an equal volume to each tube" was wrong once counts differ, and in a
+  dish the two OptiMEM volumes may differ.
+- **Cell line** is recorded (default "HEK293 parental" for new projects; blank for older files
+  rather than claiming one they never recorded).
+- **File format 7.** An older build would compute a dish project as a plate, so it refuses it.
+
 ## Open / deferred
 
 - Deeper UI polish (keyboard navigation, sidebar, density) waits until modules 2 and 3 exist,
   so navigation is designed once rather than three times.
 - Module 4 (plate-reader output reshaper) stays a stub with a clean seam until 1–3 are done.
 - Module 3 is complete for NanoBiT/BRET, HiBiT, DERET and DMR.
-- **Next up:** module 1 for larger transfections — a 6 cm dish as well as 96-well plates.
+- Possible: warn when module 2 paints more wells with a transfection than module 1 prepares.

@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   addTreatment,
   emptyLayout,
+  formatLogMList,
   isEdgeWell,
+  logSeries,
+  parseLogMList,
+  remapCompoundSteps,
   removeTreatment,
   replicateGroups,
   reshapeLayout,
@@ -256,5 +260,39 @@ describe('the plate sizes the dilution steps', () => {
     const r = computeDilutions(exp({ blocks: [blockOf()], wellsPerTreatment: wellsPerTreatment(painted()) }));
     // 4 wells at the top dose + 2 at the next + 200 µl worth of the unpainted third
     expect(r.wellsCovered).toBeCloseTo(4 + 2 + 20, 9);
+  });
+});
+
+describe('typing a compound series in module 2', () => {
+  it('reads a typed list, including the typographic minus and uneven steps', () => {
+    expect(parseLogMList('−5, -5.5 -6.25;-7')).toEqual({ logM: [-5, -5.5, -6.25, -7] });
+    expect(parseLogMList('-5, abc')).toEqual({ error: '“abc” is not a logM' });
+    expect(formatLogMList([-5, null, -6])).toBe('-5, -6');
+  });
+
+  it('fills an even series', () => {
+    expect(logSeries(-5, 0.5, 4)).toEqual([-5, -5.5, -6, -6.5]);
+  });
+
+  const paintedWith = (...ids: string[]): PlateLayout => ({
+    ...emptyLayout(),
+    wells: Object.fromEntries(ids.map((t, i) => [`A${i + 1}`, { treatments: [t, 'buf:v'] }])),
+  });
+
+  it('keeps wells on their concentration when a step is inserted', () => {
+    const before = paintedWith('cmp:b:0', 'cmp:b:1', 'cmp:b:2');
+    const after = remapCompoundSteps(before, 'b', [-5, -6, -7], [-5, -5.5, -6, -7]);
+    expect(after.wells.A1.treatments).toEqual(['cmp:b:0', 'buf:v']);
+    expect(after.wells.A2.treatments).toEqual(['cmp:b:2', 'buf:v']);
+    expect(after.wells.A3.treatments).toEqual(['cmp:b:3', 'buf:v']);
+  });
+
+  it('keeps wells on a step fixed in place, and lifts a removed one', () => {
+    const before = paintedWith('cmp:b:0', 'cmp:b:1', 'cmp:b:2');
+    const fixed = remapCompoundSteps(before, 'b', [-5, -6, -7], [-5, -6.5, -7]);
+    expect(fixed).toBe(before);
+    const dropped = remapCompoundSteps(before, 'b', [-5, -6, -7], [-5, -7]);
+    expect(dropped.wells.A2.treatments).toEqual(['buf:v']);
+    expect(dropped.wells.A3.treatments).toEqual(['cmp:b:1', 'buf:v']);
   });
 });

@@ -212,6 +212,73 @@ export function removeTreatment(current: string[], id: string): string[] {
   return current.filter((t) => t !== id);
 }
 
+/** A compound's concentrations as typed in module 2: logM, separated by commas or spaces. */
+export function formatLogMList(logM: (number | null)[]): string {
+  return logM.filter((v): v is number => v !== null && Number.isFinite(v)).join(', ');
+}
+
+/**
+ * Read a typed list of logM. Accepts the typographic minus; a comma always separates, never
+ * a decimal point. Returns the bad token instead when one will not read.
+ */
+export function parseLogMList(text: string): { logM: number[] } | { error: string } {
+  const tokens = text.replace(/−/g, '-').split(/[\s,;]+/).filter(Boolean);
+  const logM: number[] = [];
+  for (const t of tokens) {
+    const v = Number(t);
+    if (!Number.isFinite(v)) return { error: `“${t}” is not a logM` };
+    logM.push(v);
+  }
+  return { logM };
+}
+
+/** An even dose-response: `count` steps down from `top`, `step` log units apart. */
+export function logSeries(top: number, step: number, count: number): number[] {
+  return Array.from({ length: Math.max(0, Math.floor(count)) }, (_, i) => +(top - i * step).toFixed(6));
+}
+
+/**
+ * A compound's concentrations were retyped: keep each painted well on the concentration it
+ * had. A step is identified by its row, so inserting a step in the middle would otherwise
+ * shift every well below it onto the next concentration. Steps are matched by value first;
+ * a row whose value changed in place (a typo fixed) keeps its wells; a concentration that is
+ * gone takes its wells' paint with it rather than leaving them on the wrong dose.
+ */
+export function remapCompoundSteps(
+  layout: PlateLayout,
+  blockId: string,
+  before: (number | null)[],
+  after: (number | null)[],
+): PlateLayout {
+  const same = (a: number | null, b: number | null) => a !== null && b !== null && Math.abs(a - b) < 1e-9;
+  const map = new Map<number, number | null>();
+  const taken = new Set<number>();
+  before.forEach((v, i) => {
+    const j = after.findIndex((w, k) => !taken.has(k) && same(v, w));
+    if (j >= 0) { map.set(i, j); taken.add(j); }
+  });
+  before.forEach((v, i) => {
+    if (map.has(i) || v === null) return;
+    const inPlace = i < after.length && !taken.has(i) && after[i] !== null;
+    map.set(i, inPlace ? i : null);
+    if (inPlace) taken.add(i);
+  });
+  if ([...map].every(([i, j]) => i === j)) return layout;
+
+  const prefix = `cmp:${blockId}:`;
+  const wells: Record<string, WellState> = {};
+  for (const [id, w] of Object.entries(layout.wells)) {
+    if (!w.treatments?.some((t) => t.startsWith(prefix))) { wells[id] = w; continue; }
+    const treatments = w.treatments.flatMap((t) => {
+      if (!t.startsWith(prefix)) return [t];
+      const j = map.get(Number(t.slice(prefix.length)));
+      return j === undefined ? [t] : j === null ? [] : [`${prefix}${j}`];
+    });
+    wells[id] = { ...w, treatments };
+  }
+  return { ...layout, wells };
+}
+
 /**
  * How many wells each treatment covers. This is what module 3 needs: the volume of a
  * dilution step is the wells painted with it times what each well takes.

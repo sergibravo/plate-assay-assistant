@@ -218,6 +218,14 @@ tr.drop-target td { border-top: 2px solid var(--accent); }
 
 .paint-group { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
 .paint-group input[type="color"] { width: 26px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: none; cursor: pointer; }
+.compound-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 10px 34px; padding: 6px 8px; background: #f8f9fb; border: 1px solid var(--line); border-radius: 5px; font-size: 12px; }
+.compound-steps label { display: flex; align-items: center; gap: 6px; }
+.compound-steps label.wide { flex: 1 1 260px; }
+.compound-steps label.wide input { flex: 1; }
+.compound-steps input { font: inherit; padding: 2px 6px; border: 1px solid var(--line); border-radius: 4px; }
+.compound-steps .fill { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+.compound-steps .fill input[type="number"] { width: 54px; }
+.compound-steps .msg { margin: 0; padding: 2px 6px; }
 .paint-name { min-width: 92px; font-weight: 600; font-size: 12px; }
 .chips { display: flex; gap: 4px; flex-wrap: wrap; }
 .chip {

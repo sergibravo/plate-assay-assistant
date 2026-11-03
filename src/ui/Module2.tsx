@@ -2,7 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   addTreatment,
   emptyLayout,
+  formatLogMList,
   isEdgeWell,
+  logSeries,
+  parseLogMList,
+  remapCompoundSteps,
   isUsed,
   removeTreatment,
   reshapeLayout,
@@ -19,7 +23,8 @@ import { diagonalSplit, inkOn, tint, WELL_TINT } from '../calc/palette';
 import { PLATE_GEOMETRY } from '../calc/types';
 import { fmtUl } from '../calc/units';
 import { exportLayoutXlsx } from '../export/layoutsheet';
-import type { Project } from '../state/project';
+import { newCompoundBlock, type Project } from '../state/project';
+import type { CompoundBlock } from '../calc/dilutions';
 import { Panel, Warnings } from './components';
 
 /** What a click does: lay a paint down, or lift one off. */
@@ -147,10 +152,10 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
 
   /** Compounds grouped with their steps, so a series reads as one thing with a gradient. */
   const treatmentGroups = useMemo(() => {
-    const groups: { key: string; name: string; colour: string; paints: Paint[] }[] = [];
+    const groups: { key: string; name: string; colour: string; paints: Paint[]; block?: CompoundBlock }[] = [];
     for (const block of project.dilutions.blocks) {
-      const paints = treatments.filter((p) => p.blockId === block.id);
-      if (paints.length > 0) groups.push({ key: block.id, name: block.name || 'compound', colour: block.colour, paints });
+      // Shown even with no steps yet: this is where the steps get typed.
+      groups.push({ key: block.id, name: block.name || 'compound', colour: block.colour, paints: treatments.filter((p) => p.blockId === block.id), block });
     }
     const channels = treatments.filter((p) => p.kind === 'channel');
     for (const c of channels) groups.push({ key: c.id.slice(4), name: c.label, colour: c.colour, paints: [c] });
@@ -159,6 +164,27 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
     for (const c of inhibitors) groups.push({ key: c.id.slice(4), name: c.label, colour: c.colour, paints: [c] });
     return groups;
   }, [project.dilutions.blocks, treatments]);
+
+  /** Compound name and steps are edited here as well as in module 3 — it is the same compound. */
+  const setBlock = (blockId: string, patch: Partial<CompoundBlock>) => {
+    const block = project.dilutions.blocks.find((b) => b.id === blockId);
+    if (!block) return;
+    if (patch.logM) setEditing(blockId);
+    // The steps may have moved under the brush; better to pick again than paint the wrong dose.
+    if (patch.logM && brushRef.current.mode === 'treatment' && brushRef.current.paint.blockId === blockId) setBrush({ mode: 'erase' });
+    update({
+      ...project,
+      layout: patch.logM ? remapCompoundSteps(layout, blockId, block.logM, patch.logM) : layout,
+      dilutions: { ...project.dilutions, blocks: project.dilutions.blocks.map((b) => (b.id === blockId ? { ...b, ...patch } : b)) },
+    });
+  };
+  const [editing, setEditing] = useState<string | null>(null);
+  const addCompound = () => {
+    const blocks = project.dilutions.blocks;
+    const block = newCompoundBlock(`Compound ${blocks.length + 1}`, 8, blocks.length);
+    update({ ...project, dilutions: { ...project.dilutions, blocks: [...blocks, block] } });
+    setEditing(block.id);
+  };
 
   const chip = (paint: Paint, selected: boolean, onClick: () => void) => (
     <button
@@ -183,21 +209,38 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
         <div className="grid-2">
           <div>
             <h3>Treatments <span className="sub">from module 3</span></h3>
-            {treatmentGroups.length === 0 && <p className="hint">No compounds or buffer channels yet — add them in module 3.</p>}
-            {treatmentGroups.map((g) => (
-              <div key={g.key} className="paint-group">
-                <input
-                  type="color"
-                  value={g.colour}
-                  title={`Colour for ${g.name} — used here and in module 3`}
-                  onChange={(e) => setBlockColour(g.key, e.target.value)}
-                />
-                <span className="paint-name">{g.name}</span>
-                <span className="chips">
-                  {g.paints.map((p) => chip(p, brush.mode === 'treatment' && brush.paint.id === p.id, () => setBrush({ mode: 'treatment', paint: p })))}
-                </span>
-              </div>
-            ))}
+            {treatmentGroups.length === 0 && <p className="hint">No compounds or buffer channels yet.</p>}
+            {treatmentGroups.map((g) => {
+              const open = g.block && (editing === g.key || g.paints.length === 0);
+              return (
+                <div key={g.key}>
+                  <div className="paint-group">
+                    <input
+                      type="color"
+                      value={g.colour}
+                      title={`Colour for ${g.name} — used here and in module 3`}
+                      onChange={(e) => setBlockColour(g.key, e.target.value)}
+                    />
+                    <span className="paint-name">{g.name}</span>
+                    <span className="chips">
+                      {g.paints.map((p) => chip(p, brush.mode === 'treatment' && brush.paint.id === p.id, () => setBrush({ mode: 'treatment', paint: p })))}
+                    </span>
+                    {g.block && g.paints.length > 0 && (
+                      <button
+                        className="btn small no-print"
+                        onClick={() => setEditing(editing === g.key ? null : g.key)}
+                        title="Name and concentrations — the rest of the compound is in module 3"
+                      >
+                        {editing === g.key ? 'done' : 'edit'}
+                      </button>
+                    )}
+                  </div>
+                  {open && g.block && <CompoundSteps block={g.block} onChange={(patch) => setBlock(g.key, patch)} />}
+                </div>
+              );
+            })}
+            <button className="btn small no-print" onClick={addCompound}>+ Add compound</button>
+            <p className="hint">Stock, vehicle and volumes are set in module 3, once the plate is painted.</p>
           </div>
           <div>
             <h3>Transfections <span className="sub">from module 1</span></h3>
@@ -373,5 +416,57 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
         <button className="btn" onClick={() => setLayout(emptyLayout(layout.format))} title="Empty every well">Clear plate</button>
       </div>
     </>
+  );
+}
+
+/**
+ * A compound's name and concentrations, typed as a logM list so an uneven step is as easy as
+ * an even one. Fill only writes an even series into the field, to be checked or tweaked; the
+ * list reaches the plate on Enter or Apply, never by leaving the field half-edited.
+ */
+function CompoundSteps({ block, onChange }: { block: CompoundBlock; onChange: (patch: Partial<CompoundBlock>) => void }) {
+  const typed = formatLogMList(block.logM);
+  const [draft, setDraft] = useState(typed);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { setDraft(typed); setError(null); }, [typed]);
+  const [top, setTop] = useState(-5);
+  const [step, setStep] = useState(0.5);
+  const [count, setCount] = useState(8);
+
+  const commit = () => {
+    const parsed = parseLogMList(draft);
+    if ('error' in parsed) { setError(parsed.error); return; }
+    setError(null);
+    if (parsed.logM.join() !== block.logM.filter((v) => v !== null).join()) onChange({ logM: parsed.logM });
+  };
+
+  return (
+    <div className="compound-steps no-print">
+      <label>
+        Name
+        <input type="text" value={block.name} onChange={(e) => onChange({ name: e.target.value })} />
+      </label>
+      <label className="wide">
+        Conc. (logM)
+        <input
+          type="text"
+          value={draft}
+          placeholder="e.g. −5, −5.5, −6, −6.25, −7"
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') commit(); }}
+        />
+        <button className="btn small" disabled={draft === typed} onClick={commit}>Apply</button>
+      </label>
+      {error && <span className="msg error">{error}</span>}
+      <span className="fill">
+        or fill from
+        <input type="number" step="any" value={top} onChange={(e) => setTop(Number(e.target.value))} title="Top concentration (logM)" />
+        in steps of
+        <input type="number" step="any" min={0} value={step} onChange={(e) => setStep(Number(e.target.value))} title="Log units between steps — 0.5 is half-log" />
+        ×
+        <input type="number" min={1} max={24} value={count} onChange={(e) => setCount(Number(e.target.value))} title="Number of steps" />
+        <button className="btn small" onClick={() => { setDraft(formatLogMList(logSeries(top, step, count))); setError(null); }}>Fill</button>
+      </span>
+    </div>
   );
 }

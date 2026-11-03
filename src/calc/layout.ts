@@ -237,6 +237,78 @@ export function logSeries(top: number, step: number, count: number): number[] {
   return Array.from({ length: Math.max(0, Math.floor(count)) }, (_, i) => +(top - i * step).toFixed(6));
 }
 
+/** A block of wells, inclusive on both corners, in either order. */
+export interface WellRect {
+  r0: number;
+  c0: number;
+  r1: number;
+  c1: number;
+}
+
+export function normaliseRect({ r0, c0, r1, c1 }: WellRect): WellRect {
+  return { r0: Math.min(r0, r1), c0: Math.min(c0, c1), r1: Math.max(r0, r1), c1: Math.max(c0, c1) };
+}
+
+export function inRect(rect: WellRect, row: number, col: number): boolean {
+  const r = normaliseRect(rect);
+  return row >= r.r0 && row <= r.r1 && col >= r.c0 && col <= r.c1;
+}
+
+/**
+ * Move a block of wells, as cut-and-paste in a spreadsheet. A well takes everything in it:
+ * its treatments, notes and the cells it actually has — so a block moved onto a row seeded
+ * with something else keeps its own cells. The wells it leaves go back to their row's cells.
+ * It refuses rather than overwrite: there is no undo, and a painted well lost under a moved
+ * block is easy to miss.
+ */
+export function moveBlock(
+  layout: PlateLayout,
+  rect: WellRect,
+  dRow: number,
+  dCol: number,
+): { layout: PlateLayout } | { error: string } {
+  const g = PLATE_GEOMETRY[layout.format];
+  const r = normaliseRect(rect);
+  if (dRow === 0 && dCol === 0) return { layout };
+  if (r.r0 + dRow < 0 || r.r1 + dRow >= g.rows || r.c0 + dCol < 0 || r.c1 + dCol >= g.cols) {
+    return { error: 'That would push the block off the plate.' };
+  }
+  const id = (row: number, col: number) => wellId(g.rowLabels[row], col);
+  const hasContent = (w: WellState | undefined) =>
+    Boolean(w && ((w.treatments?.length ?? 0) > 0 || w.transfectionId !== undefined || w.notes));
+
+  const covered: string[] = [];
+  for (let row = r.r0 + dRow; row <= r.r1 + dRow; row++) {
+    for (let col = r.c0 + dCol; col <= r.c1 + dCol; col++) {
+      if (!inRect(r, row, col) && hasContent(layout.wells[id(row, col)])) covered.push(id(row, col));
+    }
+  }
+  if (covered.length > 0) {
+    const list = covered.length > 6 ? `${covered.slice(0, 6).join(', ')}…` : covered.join(', ');
+    return { error: `That would cover ${covered.length} painted well${covered.length === 1 ? '' : 's'} (${list}) — empty ${covered.length === 1 ? 'it' : 'them'} first.` };
+  }
+
+  const wells = { ...layout.wells };
+  const moving: { row: number; col: number; state: WellState | undefined; cells: string | null }[] = [];
+  for (let row = r.r0; row <= r.r1; row++) {
+    for (let col = r.c0; col <= r.c1; col++) {
+      const state = wells[id(row, col)];
+      const cells = state?.transfectionId !== undefined ? state.transfectionId : layout.rowTransfection[row] ?? null;
+      moving.push({ row, col, state, cells });
+      delete wells[id(row, col)];
+    }
+  }
+  for (const { row, col, state, cells } of moving) {
+    const to = row + dRow;
+    const next: WellState = {};
+    if (state?.treatments?.length) next.treatments = state.treatments;
+    if (state?.notes) next.notes = state.notes;
+    if (cells !== (layout.rowTransfection[to] ?? null)) next.transfectionId = cells;
+    if (Object.keys(next).length > 0) wells[id(to, col + dCol)] = next;
+  }
+  return { layout: { ...layout, wells } };
+}
+
 /**
  * A compound's concentrations were retyped: keep each painted well on the concentration it
  * had. A step is identified by its row, so inserting a step in the middle would otherwise

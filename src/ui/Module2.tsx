@@ -3,8 +3,11 @@ import {
   addTreatment,
   emptyLayout,
   formatLogMList,
+  inRect,
   isEdgeWell,
   logSeries,
+  moveBlock,
+  normaliseRect,
   parseLogMList,
   remapCompoundSteps,
   isUsed,
@@ -17,6 +20,7 @@ import {
   treatmentPaints,
   type Paint,
   type PlateLayout,
+  type WellRect,
   type WellState,
 } from '../calc/layout';
 import { diagonalSplit, inkOn, tint, WELL_TINT } from '../calc/palette';
@@ -27,11 +31,12 @@ import { newCompoundBlock, type Project } from '../state/project';
 import type { CompoundBlock } from '../calc/dilutions';
 import { Panel, Warnings } from './components';
 
-/** What a click does: lay a paint down, or lift one off. */
+/** What a click does: lay a paint down, lift one off, or pick up a block of wells to move. */
 type Brush =
   | { mode: 'treatment'; paint: Paint }
   | { mode: 'transfection'; paint: Paint }
-  | { mode: 'erase' };
+  | { mode: 'erase' }
+  | { mode: 'select' };
 
 export function Module2({ project, update }: { project: Project; update: (p: Project) => void }) {
   const layout = project.layout;
@@ -63,8 +68,9 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
   const dragging = useRef(false);
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
+  const onMouseUp = useRef(() => {});
   useEffect(() => {
-    const stop = () => { dragging.current = false; };
+    const stop = () => { dragging.current = false; onMouseUp.current(); };
     window.addEventListener('mouseup', stop);
     window.addEventListener('blur', stop);
     return () => {
@@ -75,7 +81,7 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
 
   // A paint that has been deleted in another module must not stay selected.
   useEffect(() => {
-    if (brush.mode === 'erase') return;
+    if (brush.mode === 'erase' || brush.mode === 'select') return;
     const pool = brush.mode === 'treatment' ? treatments : transfections;
     if (!pool.some((p) => p.id === brush.paint.id)) setBrush({ mode: 'erase' });
   }, [brush, treatments, transfections]);
@@ -85,6 +91,7 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
   const applyTo = (ids: string[]) => {
     const current$ = layoutRef.current;
     const active = brushRef.current;
+    if (active.mode === 'select') return;
     const next = { ...current$.wells };
     for (const id of ids) {
       const current: WellState = next[id] ?? {};
@@ -111,6 +118,79 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
       wells: { ...layout.wells, [id]: { ...current, treatments: removeTreatment(current.treatments ?? [], top) } },
     });
   };
+
+  /*
+   * Select-and-move. A drag that starts outside the selection draws a new one; a drag that
+   * starts inside it carries the block, previewed until the button is let go. Like painting,
+   * the drag lives in a ref so a fast drag never reads a stale render.
+   */
+  const [selection, setSelection] = useState<WellRect | null>(null);
+  const [offset, setOffset] = useState<[number, number]>([0, 0]);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const selectDrag = useRef<{ kind: 'draw'; row: number; col: number } | { kind: 'move'; row: number; col: number; offset: [number, number] } | null>(null);
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+  const selecting = brush.mode === 'select';
+  // A selection left over from an earlier visit would turn the next drag into a move.
+  useEffect(() => { if (!selecting) { setSelection(null); setMoveError(null); } }, [selecting]);
+
+  const tryMove = (rect: WellRect, dRow: number, dCol: number) => {
+    const result = moveBlock(layoutRef.current, rect, dRow, dCol);
+    if ('error' in result) { setMoveError(result.error); return; }
+    setMoveError(null);
+    layoutRef.current = result.layout;
+    setLayout(result.layout);
+    const r = normaliseRect(rect);
+    setSelection({ r0: r.r0 + dRow, c0: r.c0 + dCol, r1: r.r1 + dRow, c1: r.c1 + dCol });
+  };
+
+  const selectDown = (row: number, col: number) => {
+    setMoveError(null);
+    const sel = selectionRef.current;
+    if (sel && inRect(sel, row, col)) {
+      selectDrag.current = { kind: 'move', row, col, offset: [0, 0] };
+    } else {
+      selectDrag.current = { kind: 'draw', row, col };
+      setSelection({ r0: row, c0: col, r1: row, c1: col });
+    }
+  };
+  const selectOver = (row: number, col: number) => {
+    const drag = selectDrag.current;
+    if (!drag) return;
+    if (drag.kind === 'draw') {
+      setSelection({ r0: drag.row, c0: drag.col, r1: row, c1: col });
+    } else {
+      drag.offset = [row - drag.row, col - drag.col];
+      setOffset(drag.offset);
+    }
+  };
+  onMouseUp.current = () => {
+    const drag = selectDrag.current;
+    selectDrag.current = null;
+    setOffset([0, 0]);
+    const sel = selectionRef.current;
+    if (drag?.kind === 'move' && sel) tryMove(sel, drag.offset[0], drag.offset[1]);
+  };
+
+  // Arrow keys nudge the selected block a well at a time; Esc lets go of it.
+  useEffect(() => {
+    if (!selecting) return;
+    const onKey = (e: KeyboardEvent) => {
+      const sel = selectionRef.current;
+      if (!sel || (e.target instanceof Element && e.target.closest('input, select, textarea'))) return;
+      const step: Record<string, [number, number]> = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+      if (e.key === 'Escape') { setSelection(null); setMoveError(null); return; }
+      if (!step[e.key]) return;
+      e.preventDefault();
+      tryMove(sel, ...step[e.key]);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  const preview = selection && (offset[0] !== 0 || offset[1] !== 0)
+    ? (() => { const r = normaliseRect(selection); return { r0: r.r0 + offset[0], c0: r.c0 + offset[1], r1: r.r1 + offset[0], c1: r.c1 + offset[1] }; })()
+    : null;
 
   const rowIds = (row: number) => Array.from({ length: geometry.cols }, (_, c) => `${geometry.rowLabels[row]}${c + 1}`);
   const colIds = (col: number) => Array.from({ length: geometry.rows }, (_, r) => `${geometry.rowLabels[r]}${col + 1}`);
@@ -249,18 +329,27 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
               {transfections.map((p) => chip(p, brush.mode === 'transfection' && brush.paint.id === p.id, () => setBrush({ mode: 'transfection', paint: p })))}
             </div>
 
-            <h3 style={{ marginTop: 14 }}>Eraser</h3>
+            <h3 style={{ marginTop: 14 }}>Tools</h3>
             <button
               className={`chip eraser${brush.mode === 'erase' ? ' on' : ''}`}
               onClick={() => setBrush({ mode: 'erase' })}
               title="Drag across wells to empty them"
             >
               ⌫ empty the well
+            </button>{' '}
+            <button
+              className={`chip eraser${selecting ? ' on' : ''}`}
+              onClick={() => setBrush({ mode: 'select' })}
+              title="Drag across wells to select a block, then drag it or use the arrow keys to move it"
+            >
+              ⬚ select &amp; move
             </button>
             <p className="hint">
               Pick a paint, then click a well or drag across several. Click a row or column header
               to fill it. The eraser drags the same way; right-clicking a well lifts off just its
-              last treatment, leaving anything else in place.
+              last treatment, leaving anything else in place. To shift wells already painted,
+              use <strong>select &amp; move</strong>: drag out a block (or click a row or column
+              header), then drag the block or nudge it with the arrow keys.
             </p>
           </div>
         </div>
@@ -291,7 +380,7 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
               <tr>
                 <th />
                 {Array.from({ length: geometry.cols }, (_, col) => (
-                  <th key={col} onClick={() => applyTo(colIds(col))} title={`Fill column ${col + 1}`}>{col + 1}</th>
+                  <th key={col} onClick={() => (selecting ? setSelection({ r0: 0, c0: col, r1: geometry.rows - 1, c1: col }) : applyTo(colIds(col)))} title={selecting ? `Select column ${col + 1}` : `Fill column ${col + 1}`}>{col + 1}</th>
                 ))}
                 <th className="plain">Cells in this row</th>
               </tr>
@@ -299,7 +388,7 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
             <tbody>
               {geometry.rowLabels.map((rowLabel, row) => (
                 <tr key={rowLabel}>
-                  <th onClick={() => applyTo(rowIds(row))} title={`Fill row ${rowLabel}`}>{rowLabel}</th>
+                  <th onClick={() => (selecting ? setSelection({ r0: row, c0: 0, r1: row, c1: geometry.cols - 1 }) : applyTo(rowIds(row)))} title={selecting ? `Select row ${rowLabel}` : `Fill row ${rowLabel}`}>{rowLabel}</th>
                   {Array.from({ length: geometry.cols }, (_, col) => {
                     const w = wells.find((x) => x.row === row && x.col === col)!;
                     const paints = w.treatments.map((t) => paintById.get(t)).filter((p): p is Paint => Boolean(p));
@@ -308,14 +397,20 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
                     return (
                       <td
                         key={col}
-                        className={`well${isUsed(w) ? ' used' : ''}${isEdgeWell(w, layout.format) ? ' edge' : ''}`}
+                        className={`well${isUsed(w) ? ' used' : ''}${isEdgeWell(w, layout.format) ? ' edge' : ''}${selecting && selection && inRect(selection, row, col) ? ' selected' : ''}${preview && inRect(preview, row, col) ? ' drop' : ''}${selecting ? ' selecting' : ''}`}
                         style={{
                           background: fills.length > 0 ? diagonalSplit(fills) : undefined,
                           borderLeft: seed ? `4px solid ${seed.colour}` : undefined,
                         }}
                         title={[w.id, name(w.transfectionId), ...w.treatments.map(name), w.timePoint].filter(Boolean).join(' · ')}
-                        onMouseDown={(e) => { e.preventDefault(); dragging.current = true; applyTo([w.id]); }}
-                        onMouseOver={() => { if (dragging.current) applyTo([w.id]); }}
+                        onMouseDown={(e) => {
+                          if (e.button !== 0) return;
+                          e.preventDefault();
+                          if (selecting) { selectDown(row, col); return; }
+                          dragging.current = true;
+                          applyTo([w.id]);
+                        }}
+                        onMouseOver={() => { if (selecting) selectOver(row, col); else if (dragging.current) applyTo([w.id]); }}
                         onContextMenu={(e) => { e.preventDefault(); liftTopTreatment(w.id); }}
                       >
                         <div className="well-labels">
@@ -360,6 +455,14 @@ export function Module2({ project, update }: { project: Project; update: (p: Pro
             </tbody>
           </table>
         </div>
+        {selecting && (
+          <p className={moveError ? 'msg error' : 'hint'} style={{ margin: '6px 0 0' }}>
+            {moveError ??
+              (selection
+                ? 'Drag the block, or use the arrow keys, to move it. Esc lets go of it.'
+                : 'Drag across wells to select a block, or click a row or column header.')}
+          </p>
+        )}
         <div className="legend" style={{ flexWrap: 'wrap' }}>
           {[...transfections, ...treatments].map((p) => (
             <span key={p.id}>

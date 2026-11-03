@@ -5,6 +5,7 @@ import {
   formatLogMList,
   isEdgeWell,
   logSeries,
+  moveBlock,
   parseLogMList,
   remapCompoundSteps,
   removeTreatment,
@@ -294,5 +295,41 @@ describe('typing a compound series in module 2', () => {
     const dropped = remapCompoundSteps(before, 'b', [-5, -6, -7], [-5, -7]);
     expect(dropped.wells.A2.treatments).toEqual(['buf:v']);
     expect(dropped.wells.A3.treatments).toEqual(['cmp:b:1', 'buf:v']);
+  });
+});
+
+describe('moving a block of wells', () => {
+  const base = (): PlateLayout => ({
+    ...emptyLayout(),
+    rowTransfection: ['t1', 't1', 't2', null, null, null, null, null],
+    wells: {
+      A1: { treatments: ['cmp:b:0'] },
+      A2: { treatments: ['cmp:b:1'], notes: 'n' },
+      B1: { treatments: ['cmp:b:0'] },
+      B2: { treatments: ['cmp:b:1'] },
+      A5: { treatments: ['buf:v'] },
+    },
+  });
+
+  it('shifts a block one column right, leaving the old column to its row', () => {
+    const r = moveBlock(base(), { r0: 1, c0: 1, r1: 0, c1: 0 }, 0, 1);
+    if ('error' in r) throw new Error(r.error);
+    expect(r.layout.wells.A1).toBeUndefined();
+    expect(r.layout.wells.A2).toEqual({ treatments: ['cmp:b:0'] });
+    expect(r.layout.wells.A3).toEqual({ treatments: ['cmp:b:1'], notes: 'n' });
+    expect(r.layout.wells.B3).toEqual({ treatments: ['cmp:b:1'] });
+    expect(r.layout.wells.A5).toEqual({ treatments: ['buf:v'] });
+    expect(resolveWells(r.layout).find((w) => w.id === 'A1')!.transfectionId).toBe('t1');
+  });
+
+  it('keeps the cells a well had when it moves onto another row', () => {
+    const r = moveBlock(base(), { r0: 0, c0: 0, r1: 0, c1: 0 }, 3, 0);
+    if ('error' in r) throw new Error(r.error);
+    expect(r.layout.wells.D1).toEqual({ treatments: ['cmp:b:0'], transfectionId: 't1' });
+  });
+
+  it('refuses to cover painted wells or leave the plate', () => {
+    expect(moveBlock(base(), { r0: 0, c0: 0, r1: 1, c1: 1 }, 0, 3)).toEqual({ error: expect.stringContaining('A5') });
+    expect(moveBlock(base(), { r0: 0, c0: 0, r1: 1, c1: 1 }, -1, 0)).toEqual({ error: expect.stringContaining('off the plate') });
   });
 });

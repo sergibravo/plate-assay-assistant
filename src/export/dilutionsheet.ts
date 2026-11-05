@@ -279,7 +279,7 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
         { v: `${item.name || 'inhibitor'} — ${source.stockConc_uM} µM in ${source.vehicle}, ${item.wells} wells${item.fold !== inh.defaultFold ? `, ×${round(item.fold, 3)}` : ''}`, s: label() },
         { v: round(source.conc_uM, 4), s: value() },
         { v: round(item.tubeConc_uM, 4), s: value() },
-        { v: t ? t.volToPrepare_ul : '—', s: pipette() },
+        { v: t ? roundUl(t.volToPrepare_ul) : '—', s: pipette() },
         { v: t ? roundUl(t.aliquotIn_ul) : '—', s: pipette() },
         { v: t ? roundUl(t.normalBuffer_ul) : '—', s: pipette() },
         { v: t ? roundUl(t.dmsoBuffer_ul) : '—', s: pipette() },
@@ -334,7 +334,7 @@ export function dilutionBenchSheetRows(project: Project, result: DilutionResult)
         rows.push([
           body(r.logM),
           body(round(r.tubeConc_uM, 4)),
-          body(r.volToPrepare_ul),
+          body(roundUl(r.volToPrepare_ul)),
           body(`${roundUl(r.aliquotIn_ul)}${r.aliquotFrom === 'stock' ? ' (stock)' : ''}`),
           body(roundUl(r.normalBuffer_ul)),
           body(roundUl(r.dmsoBuffer_ul)),

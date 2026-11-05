@@ -391,7 +391,16 @@ export interface DilutionExperiment {
   bsa: BsaSettings;
   /** Buffer recipes etc., carried onto the bench sheet so it is self-contained. */
   bufferNotes: string;
+  /**
+   * Round every tube volume above `WHOLE_UL_ABOVE` to a whole µl, for a P1000 that cannot
+   * set decimals. Each tube is then sized against what the tube above actually reached, so
+   * the rounding never accumulates down a series. Absent = off.
+   */
+  wholeUlAbove100?: boolean;
 }
+
+/** Above this a tube volume goes on the P1000, which only sets whole µl. */
+export const WHOLE_UL_ABOVE = 100;
 
 export interface TubeRow {
   /** 0 = top (most concentrated). */
@@ -416,6 +425,11 @@ export interface TubeRow {
   dmsoFraction: number;
   /** The BSA fraction this tube actually ends up at (0 when BSA is off). */
   bsaFraction: number;
+  /**
+   * What the tube really sits at once its volumes are rounded for the pipette. Equal to
+   * `tubeConc_uM` unless whole-µl rounding is on.
+   */
+  achievedTubeConc_uM: number;
 }
 
 export interface BlockResult {
@@ -433,6 +447,8 @@ export interface BlockResult {
   dmsoLoad: number;
   /** This block is not DMSO-matched (excluded, or the whole experiment has no DMSO). */
   unmatched: boolean;
+  /** The largest |achieved − target| / target over the rows: 0 unless rounding is on. */
+  worstConcDeviation: number;
   warnings: Warning[];
 }
 
@@ -675,6 +691,7 @@ function computeBlock(
   target: number,
   bsaFrac: number,
   stepVolumes: number[],
+  wholeUl = false,
 ): BlockResult {
   const warnings: Warning[] = [];
   const scope = block.name || 'compound';
@@ -684,19 +701,50 @@ function computeBlock(
   // An excluded compound (the sheet's Terbium) is made up with DMSO-free diluent only.
   const blockTarget = block.excludeFromVehicleMatch ? 0 : target;
 
+  // A P1000 sets whole µl only. Rounding is applied tube by tube, and each aliquot is sized
+  // against what the tube above *actually* reached, so one tube's rounding is corrected by
+  // the next instead of being carried down the series.
+  const pip = (v: number) => (wholeUl && v > WHOLE_UL_ABOVE ? Math.round(v) : v);
+  const prepared: number[] = [...volToPrepare];
+  const aliquots: number[] = [...aliquotIn];
+  const achieved: number[] = conc.map((c) => c * factor);
+  let source = block.stockConc_uM;
+
   const rows: TubeRow[] = logMs.map((logM, i) => {
-    const d = volToPrepare[i];
-    const e = aliquotIn[i];
-    const makeUp = d - e;
+    const wanted = volToPrepare[i];
+    const e = wholeUl && source > 0 ? pip((wanted * conc[i] * factor) / source) : aliquotIn[i];
+    const exactMakeUp = wholeUl ? Math.max(0, wanted - e) : wanted - e;
 
     // L `G18`: the top tube's aliquot carries the stock's own vehicle; lower tubes draw
     // from a tube already sitting at the target, so their make-up is all DMSO buffer.
     let dmsoBuffer = 0;
     if (blockTarget > 0) {
       const carried = i === 0 ? (block.vehicle === 'DMSO' ? e : 0) : e * blockTarget;
-      dmsoBuffer = Math.max(0, Math.min(makeUp, d - carried / blockTarget));
+      dmsoBuffer = Math.max(0, Math.min(exactMakeUp, wanted - carried / blockTarget));
     }
-    const normalBuffer = makeUp - dmsoBuffer;
+    let normalBuffer = exactMakeUp - dmsoBuffer;
+    if (wholeUl) {
+      dmsoBuffer = pip(dmsoBuffer);
+      normalBuffer = pip(normalBuffer);
+      // Rounding must never leave a tube short of its wells — nor of the aliquot the tube
+      // below will take, which may itself round up by up to 0.5 µl. Top up the rounded
+      // buffer by whole µl until it covers both.
+      const next = i < n - 1 && aliquotIn[i + 1] > WHOLE_UL_ABOVE ? 0.5 : 0;
+      while (e + normalBuffer + dmsoBuffer < wanted + next - 1e-9) {
+        if (dmsoBuffer > WHOLE_UL_ABOVE) dmsoBuffer += 1;
+        else if (normalBuffer > WHOLE_UL_ABOVE) normalBuffer += 1;
+        else if (dmsoBuffer >= normalBuffer && dmsoBuffer > 0) dmsoBuffer += wanted + next - (e + normalBuffer + dmsoBuffer);
+        else normalBuffer += wanted + next - (e + normalBuffer + dmsoBuffer);
+      }
+    }
+    const makeUp = normalBuffer + dmsoBuffer;
+    const d = wholeUl ? e + makeUp : wanted;
+    prepared[i] = d;
+    aliquots[i] = e;
+    if (wholeUl) {
+      achieved[i] = d > 0 ? (e * source) / d : 0;
+      source = achieved[i];
+    }
 
     const dmsoVolume = (i === 0 ? (block.vehicle === 'DMSO' ? e : 0) : e * blockTarget) + dmsoBuffer * blockTarget;
 
@@ -719,7 +767,12 @@ function computeBlock(
       leftForWells_ul: leftForWells[i],
       dmsoFraction: d > 0 ? dmsoVolume / d : 0,
       bsaFraction: d > 0 ? bsaVolume / d : 0,
+      achievedTubeConc_uM: achieved[i],
     };
+  });
+  // What stays behind depends on the tube below's (possibly rounded) aliquot.
+  rows.forEach((r, i) => {
+    r.leftForWells_ul = i === n - 1 ? prepared[i] : prepared[i] - aliquots[i + 1];
   });
 
   const warn = (level: Warning['level'], code: string, message: string) =>
@@ -785,10 +838,14 @@ function computeBlock(
     rows,
     totalNormalBuffer_ul: rows.reduce((a, r) => a + r.normalBuffer_ul, 0),
     totalDmsoBuffer_ul: rows.reduce((a, r) => a + r.dmsoBuffer_ul, 0),
-    stockNeeded_ul: n > 0 ? aliquotIn[0] : 0,
+    stockNeeded_ul: n > 0 ? aliquots[0] : 0,
     isEmpty: n === 0,
     dmsoLoad: dmsoLoadOf(block, factor, stepVolumes),
     unmatched: block.excludeFromVehicleMatch || blockTarget === 0,
+    worstConcDeviation: rows.reduce(
+      (w, r) => (r.tubeConc_uM > 0 ? Math.max(w, Math.abs(r.achievedTubeConc_uM - r.tubeConc_uM) / r.tubeConc_uM) : w),
+      0,
+    ),
     warnings,
   };
 }
@@ -995,7 +1052,7 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
   const target = exp.dmsoOverride ?? computedTarget;
   const inhTarget = inhStep ? (sharedDmso ? target : inhComputed) : 0;
   const bsaFrac = bsaBufferFraction(exp);
-  const blocks = exp.blocks.map((b) => computeBlock(b, blockFactor(exp, b), target, bsaFrac, stepVolumesOf(exp, b)));
+  const blocks = exp.blocks.map((b) => computeBlock(b, blockFactor(exp, b), target, bsaFrac, stepVolumesOf(exp, b), !!exp.wholeUlAbove100));
   const warnings: Warning[] = [];
 
   let inhibitors: InhibitorResult | null = null;
@@ -1007,7 +1064,7 @@ export function computeDilutions(exp: DilutionExperiment): DilutionResult {
     const items: InhibitorItemResult[] = inhStep.items.map((inh) => {
       const fold = inhibitorFold(exp, inh);
       const { wells, painted, forWells_ul } = inhibitorForWells(exp, inhStep, inh);
-      const b = computeBlock(inhibitorAsBlock(inh), fold, inhTarget, bsaFrac, [forWells_ul]);
+      const b = computeBlock(inhibitorAsBlock(inh), fold, inhTarget, bsaFrac, [forWells_ul], !!exp.wholeUlAbove100);
       normal += b.totalNormalBuffer_ul;
       dmso += b.totalDmsoBuffer_ul;
       const itemWarnings = [...b.warnings];

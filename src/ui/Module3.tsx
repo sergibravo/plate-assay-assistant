@@ -14,6 +14,7 @@ import {
   type Inhibitor,
   type InhibitorStep,
   type Placement,
+  WHOLE_UL_ABOVE,
 } from '../calc/dilutions';
 import type { Vehicle } from '../calc/types';
 import { fmtDmsoPct, fmtUl, logMToUM, NEGLIGIBLE_RELATIVE, round, roundDmsoPct } from '../calc/units';
@@ -740,7 +741,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                       <td className="input">
                         <input type="number" step="any" value={item.extraVolume_ul} onChange={(e) => setInhibitor(item.id, { extraVolume_ul: Number(e.target.value) })} />
                       </td>
-                      <td className="calc num">{tube ? tube.volToPrepare_ul : ''}</td>
+                      <td className="calc num">{tube ? fmtUl(tube.volToPrepare_ul) : ''}</td>
                       <td className="calc num">{tube ? fmtUl(tube.aliquotIn_ul) : ''}</td>
                       <td className="calc num">{tube ? fmtUl(tube.normalBuffer_ul) : ''}</td>
                       <td className="calc num">{tube ? fmtUl(tube.dmsoBuffer_ul) : ''}</td>
@@ -958,6 +959,18 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
             }`}
             actions={
               <div className="no-print" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <label
+                  className="hint"
+                  style={{ display: 'flex', gap: 4, alignItems: 'center', margin: 0, cursor: 'pointer' }}
+                  title={`Round every volume above ${WHOLE_UL_ABOVE} µl to a whole µl, for a P1000 — applies to every compound and inhibitor`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!exp.wholeUlAbove100}
+                    onChange={(e) => setExp({ wholeUlAbove100: e.target.checked })}
+                  />
+                  Whole µl above {WHOLE_UL_ABOVE}
+                </label>
                 <button className="btn small" onClick={() => fillSeries(block, 1)} title="Fill the rows below the top one in whole-log steps">
                   Fill ×10
                 </button>
@@ -1099,7 +1112,7 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                       <td className="calc num">
                         {row ? fmtUl(stepVolume(dilutionsWithPlate(project), block, i)) : ''}
                       </td>
-                      <td className="calc num">{row ? row.volToPrepare_ul : ''}</td>
+                      <td className="calc num">{row ? fmtUl(row.volToPrepare_ul) : ''}</td>
                       <td className="calc num">
                         {row ? `${fmtUl(row.aliquotIn_ul)}${row.aliquotFrom === 'stock' ? ' (stock)' : ''}` : ''}
                       </td>
@@ -1111,6 +1124,16 @@ export function Module3({ project, update }: { project: Project; update: (p: Pro
                 })}
               </tbody>
             </table>
+
+            {exp.wholeUlAbove100 && !res.isEmpty && (
+              <p className="hint" style={{ marginTop: 6 }}>
+                Volumes above {WHOLE_UL_ABOVE} µl are rounded to whole µl for the P1000, and each tube is
+                sized from what the tube above really reached, so the rounding does not build up down
+                the series. Every tube lands within{' '}
+                <strong>{res.worstConcDeviation < 0.00005 ? '0.01' : round(res.worstConcDeviation * 100, 2)} %</strong>{' '}
+                of its concentration{res.worstConcDeviation < 0.01 ? ' — inside the accuracy of the pipette itself' : ''}.
+              </p>
+            )}
 
             <div className="no-print" style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
               <button className="btn small" onClick={() => setBlock(block.id, { logM: [...block.logM, null] })}>+ Row</button>

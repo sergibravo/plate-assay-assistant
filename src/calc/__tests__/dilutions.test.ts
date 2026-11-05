@@ -545,3 +545,50 @@ describe('DMSO the cells would actually see', () => {
     expect(spike.warnings.some((x) => x.code === 'dmso-in-well-high')).toBe(false);
   });
 });
+
+describe('whole µl above 100 µl (P1000)', () => {
+  // ½-log steps at volumes where most of what is pipetted lands on the P1000.
+  const halfLog = [-5, -5.5, -6, -6.5, -7, -7.5, -8, -8.5];
+  const series = (vehicle: 'aqueous' | 'DMSO') =>
+    block({ volForWells_ul: 300, stockConc_uM: 1000, vehicle, logM: halfLog });
+  const run = (on: boolean, b = series('aqueous')) =>
+    computeDilutions(experiment([b], { wholeUlAbove100: on })).blocks[0];
+
+  it('off: nothing changes, and every tube sits exactly on target', () => {
+    const r = run(false);
+    expect(r.worstConcDeviation).toBe(0);
+    r.rows.forEach((t) => expect(t.achievedTubeConc_uM).toBeCloseTo(t.tubeConc_uM, 12));
+  });
+
+  it('on: every volume above 100 µl is a whole µl, smaller ones keep their decimals', () => {
+    const r = run(true);
+    const vols = r.rows.flatMap((t) => [t.aliquotIn_ul, t.normalBuffer_ul, t.dmsoBuffer_ul]);
+    expect(vols.some((v) => v > 100)).toBe(true);
+    vols.filter((v) => v > 100).forEach((v) => expect(Number.isInteger(v)).toBe(true));
+    r.rows.forEach((t) => expect(t.volToPrepare_ul).toBeCloseTo(t.aliquotIn_ul + t.normalBuffer_ul + t.dmsoBuffer_ul, 9));
+  });
+
+  it('on: concentrations stay within 0.5 % and do not drift down the series', () => {
+    const r = run(true);
+    expect(r.worstConcDeviation).toBeLessThan(0.005);
+    const last = r.rows[r.rows.length - 1];
+    expect(Math.abs(last.achievedTubeConc_uM / last.tubeConc_uM - 1)).toBeLessThan(0.005);
+  });
+
+  it('on: rounding never leaves a tube short of what its wells take', () => {
+    run(true).rows.forEach((t) => expect(t.leftForWells_ul).toBeGreaterThanOrEqual(300 - 1e-9));
+    expect(run(true).warnings.filter((w) => w.code === 'not-enough-for-wells')).toEqual([]);
+  });
+
+  it('on: DMSO matching moves by well under 1 % against the unrounded series', () => {
+    const blocks = [series('DMSO'), { ...series('aqueous'), id: 'aq' }];
+    const off = computeDilutions(experiment(blocks, { wholeUlAbove100: false }));
+    const on = computeDilutions(experiment(blocks, { wholeUlAbove100: true }));
+    on.blocks.forEach((b, bi) =>
+      b.rows.forEach((t, i) => {
+        const was = off.blocks[bi].rows[i].dmsoFraction;
+        expect(Math.abs(t.dmsoFraction - was) / was).toBeLessThan(0.01);
+      }),
+    );
+  });
+});
